@@ -33,6 +33,12 @@ from .modeles import (
 MOTIF_NOM_FICHE = re.compile(r"^(?P<reference>REF-\d{4})-v(?P<version>\d+\.\d+)$")
 MOTIF_NOM_NOTICE = re.compile(r"^notice-(?P<reference>REF-\d{4})-v(?P<version>\d+\.\d+)$")
 MOTIF_NOM_SAV = re.compile(r"^(?P<famille>proc-.+?)-v(?P<version>\d+\.\d+)$")
+MOTIF_NOM_NOTE = re.compile(
+    r"^note-\d{4}-\d{2}-\d{2}-"
+    r"(?P<sous_type>alerte-qualite|logistique|politique-tarifaire|retour-terrain|reunion-achat)"
+    r"-\d+$"
+)
+MOTIF_DIFFUSION_RESTREINTE = re.compile(r"diffusion restreinte", re.IGNORECASE)
 
 # `$` sans MULTILINE vaut fin de chaîne : sans le drapeau, le dernier champ d'une ligne
 # (« Catégorie : … ») n'était jamais capturé.
@@ -73,6 +79,8 @@ def _controler(doc: DocumentCanonique, reference_attendue: bool) -> None:
         alertes.append("date_absente")
     if not doc.titre:
         alertes.append("titre_absent")
+    if doc.type_document == TYPE_NOTE and not doc.attributs.get("sous_type"):
+        alertes.append("sous_type_absent")
 
 
 # --------------------------------------------------------------------------------------
@@ -209,6 +217,22 @@ def extraire_note(chemin: Path) -> DocumentCanonique:
     version = str(entete.get("version", "1.0"))
     date = entete.get("date")
 
+    correspondance_sous_type = MOTIF_NOM_NOTE.match(chemin.stem)
+    sous_type = (
+        correspondance_sous_type["sous_type"].replace("-", "_")
+        if correspondance_sous_type
+        else ""
+    )
+    diffusion_restreinte = bool(MOTIF_DIFFUSION_RESTREINTE.search(corps_propre))
+
+    attributs = {
+        cle: str(valeur)
+        for cle, valeur in entete.items()
+        if cle in ("auteur", "type") and valeur
+    }
+    attributs["sous_type"] = sous_type
+    attributs["diffusion_restreinte"] = "true" if diffusion_restreinte else "false"
+
     doc = DocumentCanonique(
         doc_id=f"{TYPE_NOTE}:{chemin.stem}:v{version}",
         titre=str(entete.get("titre", "")).strip(),
@@ -222,11 +246,7 @@ def extraire_note(chemin: Path) -> DocumentCanonique:
         hash_source=hacher_fichier(chemin),
         hash_texte=hacher_texte(corps_propre, str(entete.get('titre', '')), reference, str(date) if date else None),
         extrait_le=_maintenant(),
-        attributs={
-            cle: str(valeur)
-            for cle, valeur in entete.items()
-            if cle in ("auteur", "type") and valeur
-        },
+        attributs=attributs,
         sections=[Section("", corps_propre)] if corps_propre else [],
         qualite=Qualite(),
     )

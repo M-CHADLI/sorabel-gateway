@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 # Incrémenter à chaque changement d'une règle d'extraction : invalide tout le cache.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 MOTIF_REFERENCE = re.compile(r"REF-\d{4}")
 
@@ -60,6 +60,7 @@ LIBELLES_ALERTES = {
     "reference_absente": "référence attendue mais introuvable",
     "date_absente": "aucune date exploitable",
     "titre_absent": "aucun titre exploitable",
+    "sous_type_absent": "nom de fichier ne correspond à aucun sous-type de note connu",
 }
 
 
