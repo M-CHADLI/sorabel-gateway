@@ -25,7 +25,7 @@ from .modeles import (
 )
 
 RACINE = Path(__file__).resolve().parent.parent
-CORPUS = RACINE / "data" / "data" / "corpus"
+CORPUS = RACINE / "data" / "corpus"
 SORTIE = RACINE / "data" / "canonique"
 
 
