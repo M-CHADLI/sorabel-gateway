@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+.env
 # Sorties d'ingestion : regenerables en quelques secondes par scripts/ingerer.py
 data/canonique/
 data/chroma/
