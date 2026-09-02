@@ -1,0 +1,63 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 1041 >>
+stream
+BT /F1 14 Tf 50 790 Td
+/F1 14 Tf
+(NOTICE D'INSTALLATION - Disjoncteur monophasé 16 A courbe C) Tj 0 -18 Td
+/F1 10 Tf
+(Référence produit : REF-4727    Version : 1.0    Date : 2023-05-13) Tj 0 -14 Td
+/F1 10 Tf
+() Tj 0 -14 Td
+/F1 10 Tf
+(1. Consignes de sécurité) Tj 0 -14 Td
+/F1 10 Tf
+(   Couper l'alimentation générale avant toute intervention.) Tj 0 -14 Td
+/F1 10 Tf
+(   Vérifier l'absence de tension avec un appareil de mesure adapté.) Tj 0 -14 Td
+/F1 10 Tf
+(2. Installation) Tj 0 -14 Td
+/F1 10 Tf
+(   Respecter les couples de serrage indiqués par le fabricant.) Tj 0 -14 Td
+/F1 10 Tf
+(   Utiliser des conducteurs de section conforme au calibre.) Tj 0 -14 Td
+/F1 10 Tf
+(3. Mise en service) Tj 0 -14 Td
+/F1 10 Tf
+(   Contrôler le serrage des bornes après 48 h de fonctionnement.) Tj 0 -14 Td
+/F1 10 Tf
+(4. Entretien) Tj 0 -14 Td
+/F1 10 Tf
+(   Aucune pièce interne n'est réparable par l'utilisateur.) Tj 0 -14 Td
+/F1 10 Tf
+() Tj 0 -14 Td
+/F1 10 Tf
+(Assistance Sorabel : support@sorabel.example - rappeler la référence REF-4727.) Tj 0 -14 Td
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000338 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1431
+%%EOF

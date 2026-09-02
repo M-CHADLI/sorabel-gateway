@@ -1,0 +1,30 @@
+{"id": "RAG-01", "type": "reference_exacte", "question": "REF-8842", "attendu_reference": "REF-8842"}
+{"id": "RAG-02", "type": "reference_exacte", "question": "fiche technique REF-8842", "attendu_reference": "REF-8842"}
+{"id": "RAG-03", "type": "reference_exacte", "question": "REF-5313", "attendu_reference": "REF-5313"}
+{"id": "RAG-04", "type": "reference_exacte", "question": "REF-8836", "attendu_reference": "REF-8836"}
+{"id": "RAG-05", "type": "reference_exacte", "question": "REF-5719", "attendu_reference": "REF-5719"}
+{"id": "RAG-06", "type": "reference_exacte", "question": "REF-5603", "attendu_reference": "REF-5603"}
+{"id": "RAG-07", "type": "reference_exacte", "question": "REF-4581", "attendu_reference": "REF-4581"}
+{"id": "RAG-08", "type": "reference_exacte", "question": "REF-9382", "attendu_reference": "REF-9382"}
+{"id": "RAG-09", "type": "couverte", "question": "quel disjoncteur pour un départ moteur en triphasé ?", "attendu_reference": "REF-8842"}
+{"id": "RAG-10", "type": "couverte", "question": "que faire quand un disjoncteur déclenche de façon répétée ?", "attendu_type": "procedure_sav"}
+{"id": "RAG-11", "type": "couverte", "question": "quelle est la procédure de retour d'un produit défectueux sous garantie ?", "attendu_type": "procedure_sav"}
+{"id": "RAG-12", "type": "couverte", "question": "quel est le délai annoncé au client pour un échange standard ?", "attendu_type": "procedure_sav"}
+{"id": "RAG-13", "type": "couverte", "question": "quelles précautions avant d'installer un produit électrique ?", "attendu_type": "notice"}
+{"id": "RAG-14", "type": "couverte", "question": "que vérifier 48 heures après la mise en service d'une installation ?", "attendu_type": "notice"}
+{"id": "RAG-15", "type": "couverte", "question": "quelle norme s'applique aux disjoncteurs modulaires ?", "attendu_type": "fiche_technique"}
+{"id": "RAG-16", "type": "couverte", "question": "quelle est la garantie fabricant par défaut sur le catalogue ?", "attendu_type": "fiche_technique"}
+{"id": "RAG-17", "type": "couverte", "question": "que faire si un colis arrive endommagé ?", "attendu_type": "procedure_sav"}
+{"id": "RAG-18", "type": "couverte", "question": "comment demander un duplicata de facture ?", "attendu_type": "procedure_sav"}
+{"id": "RAG-19", "type": "couverte", "question": "quel différentiel choisir pour un circuit avec plaque de cuisson ?", "attendu_type": "fiche_technique"}
+{"id": "RAG-20", "type": "couverte", "question": "quelle section de conducteur pour un disjoncteur 40 A ?", "attendu_type": "notice"}
+{"id": "RAG-21", "type": "couverte", "question": "un client peut-il faire réparer une batterie d'outillage sans fil ?", "attendu_type": "procedure_sav"}
+{"id": "RAG-22", "type": "couverte", "question": "quelle est la température de service d'un câble R2V ?", "attendu_type": "fiche_technique"}
+{"id": "RAG-23", "type": "hors_corpus", "question": "quelle est la politique de télétravail chez Sorabel ?"}
+{"id": "RAG-24", "type": "hors_corpus", "question": "quel est le chiffre d'affaires de Sorabel en 2025 ?"}
+{"id": "RAG-25", "type": "hors_corpus", "question": "comment configurer le VPN interne ?"}
+{"id": "RAG-26", "type": "hors_corpus", "question": "quelles sont les grilles de salaires des techniciens ?"}
+{"id": "RAG-27", "type": "hors_corpus", "question": "quel est le planning des congés du service logistique ?"}
+{"id": "RAG-28", "type": "hors_corpus", "question": "quelle est la procédure de recrutement des alternants ?"}
+{"id": "RAG-29", "type": "hors_corpus", "question": "comment résilier le contrat d'électricité de l'entrepôt de Lyon ?"}
+{"id": "RAG-30", "type": "hors_corpus", "question": "quelle est la politique RSE du groupe ?"}

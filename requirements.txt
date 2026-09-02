@@ -1,0 +1,9 @@
+# Ingestion
+pypdf>=4.0
+beautifulsoup4>=4.12
+PyYAML>=6.0
+
+# Index et recherche
+chromadb>=0.5
+sentence-transformers>=3.0
+rank-bm25>=0.2.2
