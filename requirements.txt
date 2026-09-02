@@ -10,3 +10,7 @@ rank-bm25>=0.2.2
 
 # Tests
 pytest>=8.0
+
+# LLM (Azure AI Foundry)
+openai>=2.0
+python-dotenv>=1.2
