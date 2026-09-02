@@ -207,6 +207,10 @@ def chunker(document: DocumentCanonique, manifeste: dict) -> list[Chunk]:
                     "section": titre_section,
                     "source_path": document.source_path,
                     "cle_groupe": document.cle_groupe,
+                    # Gouvernance (E5) : filtrage par sous-type et confidentialité des notes.
+                    # Chaîne vide / False pour les documents non concernés (fiches, notices, SAV).
+                    "sous_type": document.attributs.get("sous_type", ""),
+                    "diffusion_restreinte": document.attributs.get("diffusion_restreinte") == "true",
                 },
             )
         )
