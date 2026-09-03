@@ -44,9 +44,16 @@ def _construire_citations(resultats: list[Resultat]) -> list[dict]:
     return list(vues.values())
 
 
-def repondre(question: str, k: int = 5) -> dict:
-    """Le tool `answer_question` du catalogue MCP (chantier 1)."""
-    resultats = rechercher(question, k=k, config="hybride_rerank")
+def repondre(question: str, k: int = 5, perimetre=None) -> dict:
+    """Le tool `answer_question` du catalogue MCP (chantier 1).
+
+    `perimetre=None` : aucune restriction de collection (comportement de la Phase 2). Un
+    `Perimetre` réel (Phase 4) restreint le retrieval aux collections autorisées du profil —
+    appliqué DANS le retrieval, pas en post-filtrage des résultats (E5)."""
+    collections = perimetre.collections_autorisees() if perimetre is not None else None
+    resultats = rechercher(
+        question, k=k, config="hybride_rerank", collections_autorisees=collections
+    )
     if not resultats or resultats[0].score < SEUIL_REFUS:
         return {
             "statut": "hors_corpus",
