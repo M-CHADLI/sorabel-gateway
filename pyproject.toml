@@ -28,6 +28,9 @@ dependencies = [
 
     # Frontend
     "streamlit>=1.30",
+
+    # Gouvernance
+    "pydantic>=2.0",
 ]
 
 [dependency-groups]
