@@ -46,6 +46,42 @@ SEUIL_REFUS = 1e-4
 # qui la mentionne en passant. BM25 classe l'inverse : il normalise par la longueur.
 PREFERENCE_TYPE_SUR_REFERENCE_SEULE = {"fiche_technique": 0.02, "notice": 0.01}
 
+# Une "collection" de gouvernance n'est pas une collection Chroma : c'est un regroupement
+# métier (chantier 3) qui se traduit en filtre sur type_document (+ sous_type pour distinguer
+# les deux familles de notes — cf. docs/conception_mcp.md §2).
+SOUS_TYPES_OPERATIONNELS = frozenset({"logistique", "alerte_qualite", "retour_terrain"})
+SOUS_TYPES_CONFIDENTIELS = frozenset({"politique_tarifaire", "reunion_achat"})
+
+CONDITION_COLLECTION: dict[str, dict] = {
+    "fiches": {"type_document": "fiche_technique"},
+    "notices": {"type_document": "notice"},
+    "sav": {"type_document": "procedure_sav"},
+    "notes_operationnelles": {
+        "$and": [
+            {"type_document": "note_interne"},
+            {"sous_type": {"$in": sorted(SOUS_TYPES_OPERATIONNELS)}},
+        ]
+    },
+    "notes_confidentielles": {
+        "$and": [
+            {"type_document": "note_interne"},
+            {"sous_type": {"$in": sorted(SOUS_TYPES_CONFIDENTIELS)}},
+        ]
+    },
+}
+
+
+def filtre_collections(collections_autorisees: frozenset[str] | None) -> dict | None:
+    """`None` = aucune restriction (profil non gouverné, comportement historique)."""
+    if collections_autorisees is None:
+        return None
+    conditions = [
+        CONDITION_COLLECTION[c] for c in collections_autorisees if c in CONDITION_COLLECTION
+    ]
+    if not conditions:
+        return {"type_document": "__aucune_collection_autorisee__"}  # ne matche jamais
+    return conditions[0] if len(conditions) == 1 else {"$or": conditions}
+
 _reranker = None
 
 
@@ -77,12 +113,19 @@ def _est_reference_seule(requete: str, references: list[str]) -> bool:
     return bool(references) and not re.search(r"[A-Za-zÀ-ÿ]{3,}", reste)
 
 
-def _filtre_chroma(inclure_versions_anciennes: bool, type_document: str | None) -> dict | None:
+def _filtre_chroma(
+    inclure_versions_anciennes: bool,
+    type_document: str | None,
+    collections_autorisees: frozenset[str] | None = None,
+) -> dict | None:
     conditions = []
     if not inclure_versions_anciennes:
         conditions.append({"est_version_courante": True})
     if type_document:
         conditions.append({"type_document": type_document})
+    filtre_gouvernance = filtre_collections(collections_autorisees)
+    if filtre_gouvernance:
+        conditions.append(filtre_gouvernance)
     if not conditions:
         return None
     return conditions[0] if len(conditions) == 1 else {"$and": conditions}
@@ -99,10 +142,13 @@ def rechercher(
     profondeur: int = PROFONDEUR,
     type_document: str | None = None,
     inclure_versions_anciennes: bool = False,
+    collections_autorisees: frozenset[str] | None = None,
 ) -> list[Resultat]:
-    """`config` ∈ {dense, hybride, hybride_rerank} — les trois configurations de l'éval."""
+    """`config` ∈ {dense, hybride, hybride_rerank} — les trois configurations de l'éval.
+    `collections_autorisees` : `None` = aucune restriction ; sinon un sous-ensemble de
+    {fiches, notices, sav, notes_operationnelles, notes_confidentielles} (gouvernance, E5)."""
     collection = ouvrir_collection()
-    filtre = _filtre_chroma(inclure_versions_anciennes, type_document)
+    filtre = _filtre_chroma(inclure_versions_anciennes, type_document, collections_autorisees)
 
     # ---- moteur dense ----------------------------------------------------------------
     vecteur = encoder_requete(requete)
