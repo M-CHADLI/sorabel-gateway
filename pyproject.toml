@@ -1,0 +1,45 @@
+[project]
+name = "sorabel-data-gateway"
+version = "0.1.0"
+description = "Sorabel Data Gateway: RAG avancé + Text-to-SQL en lecture seule, exposé via MCP"
+requires-python = ">=3.12"
+authors = [
+    {name = "M-CHADLI", email = "contactchadli@gmail.com"}
+]
+license = {text = "MIT"}
+
+dependencies = [
+    # Ingestion
+    "pypdf>=4.0",
+    "beautifulsoup4>=4.12",
+    "PyYAML>=6.0",
+
+    # Index et recherche
+    "chromadb>=0.5",
+    "sentence-transformers>=3.0",
+    "rank-bm25>=0.2.2",
+
+    # LLM (Azure AI Foundry)
+    "openai>=2.0",
+    "python-dotenv>=1.2",
+
+    # MCP
+    "mcp>=0.1",
+
+    # Frontend
+    "streamlit>=1.30",
+]
+
+[dependency-groups]
+test = [
+    "pytest>=8.0",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
