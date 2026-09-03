@@ -37,6 +37,22 @@ def _normaliser(sql: str) -> str:
     return re.sub(r"\s+", " ", sans_commentaires).strip()
 
 
+def _contient_selection_generique(instruction: str) -> bool:
+    """Un "*" est une sélection générique de colonnes (SELECT *, SELECT t.*) sauf s'il est
+    un argument de fonction d'agrégat (COUNT(*)) : on le reconnaît en regardant si le
+    caractère non-espace qui le précède immédiatement est une parenthèse ouvrante."""
+    for position, caractere in enumerate(instruction):
+        if caractere != "*":
+            continue
+        curseur = position - 1
+        while curseur >= 0 and instruction[curseur].isspace():
+            curseur -= 1
+        precedent = instruction[curseur] if curseur >= 0 else ""
+        if precedent != "(":
+            return True
+    return False
+
+
 def valider(sql: str, perimetre) -> str:
     """Retourne le SQL normalisé s'il passe les quatre contrôles ; lève ValidationEchouee sinon."""
     normalisee = _normaliser(sql)
@@ -80,6 +96,18 @@ def valider(sql: str, perimetre) -> str:
         raise ValidationEchouee(
             "non_autorise", f"table(s) hors périmètre du profil : {', '.join(sorted(hors_perimetre))}"
         )
+
+    if _contient_selection_generique(instruction):
+        tables_avec_colonnes_sensibles = {
+            table for table in tables_citees_reelles if perimetre.colonnes_interdites(table)
+        }
+        if tables_avec_colonnes_sensibles:
+            raise ValidationEchouee(
+                "non_autorise",
+                "sélection générique (SELECT * ou alias.*) refusée : la ou les table(s) "
+                f"{', '.join(sorted(tables_avec_colonnes_sensibles))} ont des colonnes hors "
+                "périmètre du profil ; nommez explicitement les colonnes autorisées.",
+            )
 
     for table in tables_citees_reelles:
         colonnes_interdites = perimetre.colonnes_interdites(table)

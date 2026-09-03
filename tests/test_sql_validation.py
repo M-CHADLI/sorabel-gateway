@@ -89,3 +89,31 @@ def test_supprime_les_commentaires_avant_validation():
     resultat = valider(sql, PERIMETRE_COMPLET)
     assert "DROP" not in resultat
     assert "--" not in resultat
+
+
+def test_refuse_selection_generique_sur_table_avec_colonnes_sensibles():
+    # SELECT * ne mentionne littéralement aucune colonne interdite, mais SQLite les
+    # renverrait quand même : c'est le contournement E5 à bloquer.
+    with pytest.raises(ValidationEchouee) as exc:
+        valider("SELECT * FROM produits", PERIMETRE_SUPPORT)
+    assert exc.value.statut == "non_autorise"
+
+
+def test_autorise_selection_generique_sur_table_sans_colonnes_sensibles():
+    # "stocks" n'a aucune colonne interdite pour le profil support : SELECT * reste permis.
+    resultat = valider("SELECT * FROM stocks", PERIMETRE_SUPPORT)
+    assert resultat == "SELECT * FROM stocks"
+
+
+def test_autorise_count_etoile_reste_permis():
+    # COUNT(*) est un agrégat légitime, pas une sélection générique de colonnes : non-régression.
+    resultat = valider("SELECT COUNT(*) FROM commandes", PERIMETRE_COMPLET)
+    assert resultat == "SELECT COUNT(*) FROM commandes"
+
+
+def test_refuse_selection_generique_avec_alias_sur_table_sensible():
+    # Cas limite : "t.*" est aussi une sélection générique de colonnes (via un alias),
+    # pas un argument de fonction d'agrégat — doit être refusé au même titre que "SELECT *".
+    with pytest.raises(ValidationEchouee) as exc:
+        valider("SELECT t.* FROM produits t", PERIMETRE_SUPPORT)
+    assert exc.value.statut == "non_autorise"
