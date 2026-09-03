@@ -23,9 +23,11 @@ CHEMIN_GOUVERNANCE_DB = str(RACINE / "gouvernance" / "gouvernance.db")
 async def _get_perimetre():
     """Charge le périmètre selon le profil de la variable d'environnement."""
     from gouvernance.perimetre import Perimetre
+    from gouvernance.modeles import charger_matrice
 
     profil = os.getenv("SORABEL_PROFIL", "support")
-    return Perimetre(profil, CHEMIN_GOUVERNANCE_DB)
+    matrice = charger_matrice(CHEMIN_GOUVERNANCE_DB)
+    return Perimetre(profil, matrice)
 
 
 def _get_tools() -> list[Tool]:
@@ -56,10 +58,8 @@ async def main():
     async def list_tools_handler():
         """Implémente tools/list : retourne les outils autorisés pour le profil."""
         perimetre = await _get_perimetre()
-        tools_autorises = set(perimetre.tools_autorises())
         all_tools = _get_tools()
-        outils_filtres = [t for t in all_tools if t.name in tools_autorises]
-        perimetre.fermer()
+        outils_filtres = [t for t in all_tools if perimetre.peut_appeler(t.name)]
         return outils_filtres
 
     @server.call_tool()
@@ -70,9 +70,7 @@ async def main():
         arguments = arguments or {}
 
         # Vérifier que l'outil est autorisé
-        tools_autorises = perimetre.tools_autorises()
-        if tool_name not in tools_autorises:
-            perimetre.fermer()
+        if not perimetre.peut_appeler(tool_name):
             result_dict = {
                 "statut": "non_autorise",
                 "message": f"le profil {perimetre.profil!r} n'a pas accès au tool {tool_name!r}",
@@ -133,7 +131,6 @@ async def main():
                 "message": f"outil {tool_name} non implémenté",
             }
 
-        perimetre.fermer()
         return [TextContent(type="text", text=json.dumps(result_dict))]
 
     # Lancer le serveur en mode stdio

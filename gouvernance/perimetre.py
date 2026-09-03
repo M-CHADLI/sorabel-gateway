@@ -1,68 +1,35 @@
-"""Matrice d'accès : profil × tools × tables × colonnes."""
+"""Le Perimetre : les droits d'un profil, sous la forme que les tools consomment.
 
-import sqlite3
-from pathlib import Path
+Les tools ne lisent ni gouvernance.db ni le modèle Pydantic : ils reçoivent un Perimetre
+construit une fois par appel et lui posent des questions. Duck-typé pour satisfaire le
+contrat déjà attendu par sorabel_sql (Phase 3) sans qu'aucune ligne de ce package ne
+dépende de `gouvernance`.
+"""
+
+from __future__ import annotations
+
+from .modeles import MatriceAcces
+
+
+class ProfilInconnu(Exception):
+    pass
 
 
 class Perimetre:
-    """Encapsule la matrice d'accès pour un profil donné."""
-
-    def __init__(self, profil: str, chemin_db: str | Path):
-        """Initialise le périmètre pour un profil.
-
-        Args:
-            profil: "support", "commercial", "dev", ou "admin"
-            chemin_db: chemin de la base gouvernance/gouvernance.db
-        """
+    def __init__(self, profil: str, matrice: MatriceAcces):
+        if profil not in matrice.profils:
+            raise ProfilInconnu(f"profil inconnu : {profil!r}")
         self.profil = profil
-        self.chemin_db = Path(chemin_db)
-        self._conn = None
+        self._droits = matrice.profils[profil]
 
-    def _get_conn(self) -> sqlite3.Connection:
-        """Retourne une connexion à la base (lazy initialization)."""
-        if self._conn is None:
-            self._conn = sqlite3.connect(str(self.chemin_db))
-        return self._conn
+    def peut_appeler(self, tool: str) -> bool:
+        return tool in self._droits.tools
 
-    def tools_autorises(self) -> list[str]:
-        """Retourne la liste des tools autorisés pour ce profil."""
-        conn = self._get_conn()
-        c = conn.cursor()
-        c.execute(
-            "SELECT tool FROM profil_tool WHERE profil = ? ORDER BY tool",
-            (self.profil,)
-        )
-        return [row[0] for row in c.fetchall()]
+    def collections_autorisees(self) -> frozenset[str]:
+        return self._droits.collections
 
-    def colonnes_interdites(self, table: str) -> set[str]:
-        """Retourne l'ensemble des colonnes interdites pour une table.
+    def tables_autorisees(self) -> frozenset[str]:
+        return self._droits.tables
 
-        Args:
-            table: nom de la table (ex. "produits", "ventes")
-
-        Returns:
-            Ensemble des colonnes interdites (ex. {"marge_pct", "prix_achat_ht"})
-        """
-        conn = self._get_conn()
-        c = conn.cursor()
-        c.execute(
-            "SELECT colonne FROM colonne_interdite WHERE profil = ? AND table_sql = ?",
-            (self.profil, table)
-        )
-        return {row[0] for row in c.fetchall()}
-
-    def tables_autorisees(self) -> set[str]:
-        """Retourne l'ensemble des tables autorisées pour ce profil."""
-        conn = self._get_conn()
-        c = conn.cursor()
-        c.execute(
-            "SELECT table_sql FROM profil_table WHERE profil = ? ORDER BY table_sql",
-            (self.profil,)
-        )
-        return {row[0] for row in c.fetchall()}
-
-    def fermer(self):
-        """Ferme la connexion à la base."""
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+    def colonnes_interdites(self, table: str) -> frozenset[str]:
+        return self._droits.colonnes_interdites.get(table, frozenset())
