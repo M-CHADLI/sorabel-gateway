@@ -117,3 +117,14 @@ def test_refuse_selection_generique_avec_alias_sur_table_sensible():
     with pytest.raises(ValidationEchouee) as exc:
         valider("SELECT t.* FROM produits t", PERIMETRE_SUPPORT)
     assert exc.value.statut == "non_autorise"
+
+
+def test_autorise_multiplication_sur_table_avec_colonnes_sensibles():
+    # Non-régression : une multiplication arithmétique (quantite * prix_unitaire_ht)
+    # ne doit pas être confondue avec un wildcard générique (SELECT *).
+    # La requête est valide : ni quantite ni prix_unitaire_ht ne sont dans les colonnes
+    # interdites (seule marge_ht l'est pour ventes).
+    resultat = valider(
+        "SELECT quantite * prix_unitaire_ht AS total FROM ventes", PERIMETRE_SUPPORT
+    )
+    assert resultat == "SELECT quantite * prix_unitaire_ht AS total FROM ventes"

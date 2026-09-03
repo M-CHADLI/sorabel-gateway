@@ -39,17 +39,44 @@ def _normaliser(sql: str) -> str:
 
 def _contient_selection_generique(instruction: str) -> bool:
     """Un "*" est une sélection générique de colonnes (SELECT *, SELECT t.*) sauf s'il est
-    un argument de fonction d'agrégat (COUNT(*)) : on le reconnaît en regardant si le
-    caractère non-espace qui le précède immédiatement est une parenthèse ouvrante."""
+    un argument de fonction d'agrégat (COUNT(*)) ou une opération arithmétique (a * b).
+
+    COUNT(*) : le * est précédé d'une parenthèse ouvrante.
+    Multiplication (a * b) : le * est suivi d'un identifiant/nombre.
+    Wildcard générique : le * n'est pas précédé d'un ( et est suivi de virgule, FROM ou fin.
+    """
     for position, caractere in enumerate(instruction):
         if caractere != "*":
             continue
+
+        # Vérifier le caractère précédent (ignorer les espaces)
         curseur = position - 1
         while curseur >= 0 and instruction[curseur].isspace():
             curseur -= 1
         precedent = instruction[curseur] if curseur >= 0 else ""
-        if precedent != "(":
+
+        # Si précédé d'une parenthèse, c'est COUNT(*) → pas générique
+        if precedent == "(":
+            continue
+
+        # Vérifier ce qui suit le * (ignorer les espaces)
+        curseur = position + 1
+        while curseur < len(instruction) and instruction[curseur].isspace():
+            curseur += 1
+        suite = instruction[curseur:] if curseur < len(instruction) else ""
+
+        # Un vrai wildcard est suivi de virgule, FROM, ou fin de chaîne
+        # Si c'est suivi d'un identifiant ou nombre, c'est une multiplication
+        est_fin_de_selection = (
+            suite == "" or
+            suite.startswith(",") or
+            re.match(r"(?i:from)\b", suite)
+        )
+
+        if est_fin_de_selection:
+            # C'est un wildcard générique
             return True
+
     return False
 
 
