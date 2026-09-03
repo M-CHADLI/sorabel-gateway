@@ -29,7 +29,7 @@ class Perimetre:
         conn = self._get_conn()
         c = conn.cursor()
         c.execute(
-            "SELECT tool FROM autorisations_tools WHERE profil = ? ORDER BY tool",
+            "SELECT tool FROM profil_tool WHERE profil = ? ORDER BY tool",
             (self.profil,)
         )
         return [row[0] for row in c.fetchall()]
@@ -46,17 +46,20 @@ class Perimetre:
         conn = self._get_conn()
         c = conn.cursor()
         c.execute(
-            "SELECT colonne FROM colonnes_interdites WHERE profil = ? AND table_name = ?",
+            "SELECT colonne FROM colonne_interdite WHERE profil = ? AND table_sql = ?",
             (self.profil, table)
         )
         return {row[0] for row in c.fetchall()}
 
     def tables_autorisees(self) -> set[str]:
-        """Retourne l'ensemble des tables autorisées pour ce profil.
-
-        Stub : toutes les tables du schéma.
-        """
-        return {"produits", "stocks", "clients", "commandes", "ventes"}
+        """Retourne l'ensemble des tables autorisées pour ce profil."""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT table_sql FROM profil_table WHERE profil = ? ORDER BY table_sql",
+            (self.profil,)
+        )
+        return {row[0] for row in c.fetchall()}
 
     def fermer(self):
         """Ferme la connexion à la base."""

@@ -5,3 +5,6 @@ __pycache__/
 # Sorties d'ingestion : regenerables en quelques secondes par scripts/ingerer.py
 data/canonique/
 data/chroma/
+# Gouvernance : régénérable par scripts/seed_gouvernance.py
+gouvernance/*.db
+logs/
