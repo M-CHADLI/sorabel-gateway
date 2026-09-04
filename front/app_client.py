@@ -5,9 +5,12 @@ sur une référence, suivre une commande) et non autour du catalogue de tools : 
 produit rassemble ici documentation, stock et conditions tarifaires, là où le serveur expose
 trois tools distincts.
 
-Direction visuelle : Minimalism & Swiss Style (grille, contraste élevé, typographie
-fonctionnelle) — registre adapté aux outils métier denses. Fira Sans porte l'interface,
-Fira Code les données à lire au caractère près (références, identifiants, SQL).
+Direction visuelle : registre SaaS contemporain — profondeur par ombres douces plutôt que
+par traits, coins largement arrondis, fond légèrement teinté sur lequel les surfaces
+blanches se détachent. Plus Jakarta Sans porte l'interface, JetBrains Mono les données à
+lire au caractère près (références, identifiants, SQL). Le verre dépoli est réservé au
+bandeau : l'appliquer derrière un tableau de chiffres coûterait en lisibilité ce qu'il
+rapporte en style.
 
 Tout passe par le serveur MCP (`front.mcp_client`) : la page n'applique aucune règle d'accès
 elle-même, elle reflète ce que la matrice autorise pour le profil connecté. Les garanties du
@@ -103,113 +106,147 @@ LOGO = """<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidde
 
 STYLE = """
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
   :root {
-    --encre:        #0F172A;
-    --encre-douce:  #475569;
-    --bord:         #E2E8F0;
-    --fond-doux:    #F8FAFC;
-    --accent:       #1D4ED8;
-    --succes:       #15803D;
-    --succes-fond:  #DCFCE7;
-    --alerte:       #B91C1C;
-    --alerte-fond:  #FEE2E2;
-    --transition:   180ms ease;
+    --encre:        #101828;
+    --encre-douce:  #5B6478;
+    --bord:         #E6EAF2;
+    --bord-net:     #D4DBE8;
+    --fond-doux:    #F4F7FC;
+    --accent:       #2563EB;
+    --accent-fonce: #1D4ED8;
+    --accent-voile: #EFF4FF;
+    --succes:       #0F7A4A;
+    --succes-fond:  #E3F7EC;
+    --alerte:       #C0322B;
+    --alerte-fond:  #FDECEB;
+    --transition:   180ms cubic-bezier(.4, 0, .2, 1);
+    /* Élévation par ombres douces plutôt que par traits : deux ombres superposées — une
+       courte et dense pour le contact, une longue et diffuse pour la hauteur — donnent la
+       profondeur qu'un bord 1px ne rend pas. */
+    --ombre-1:  0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.05);
+    --ombre-2:  0 2px 4px rgba(16,24,40,.05), 0 6px 16px -4px rgba(16,24,40,.09);
+    --rayon:    14px;
   }
 
   html, body, [class*="css"], .stMarkdown, button, input, select, textarea {
-    font-family: 'Fira Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
-  .block-container { padding-top: 3rem; max-width: 1200px; }
+  /* Fond légèrement teinté : les surfaces blanches s'y détachent, ce qu'un blanc sur blanc
+     ne permet pas — c'est ce qui fait exister les cartes sans les cercler de traits. */
+  [data-testid="stAppViewContainer"] {
+    background:
+      radial-gradient(1100px 460px at 12% -8%, #EAF1FE 0%, rgba(234,241,254,0) 62%),
+      radial-gradient(900px 420px at 96% 0%, #F1EDFD 0%, rgba(241,237,253,0) 58%),
+      #F7F9FD;
+  }
+  .block-container { padding-top: 2.6rem; max-width: 1180px; }
 
   /* Contraste : 4.5:1 minimum sur tout le texte courant. */
   .stMarkdown, .stMarkdown p, label, .stCaption { color: var(--encre); }
   .stCaption, [data-testid="stCaptionContainer"] { color: var(--encre-douce) !important; }
+  h1, h2, h3, h4, h5 { letter-spacing: -.021em; font-weight: 700; color: var(--encre); }
 
+  /* Verre dépoli sur le bandeau seulement : flouter un fond derrière un tableau de chiffres
+     coûterait en lisibilité ce qu'il rapporte en style. Ici il n'y a que du titre. */
   .bandeau {
-    display: flex; align-items: center; gap: .6rem;
-    border-bottom: 1px solid var(--bord); padding-bottom: .8rem; margin-bottom: 1.1rem;
+    display: flex; align-items: center; gap: .7rem;
+    background: rgba(255,255,255,.72);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.7); box-shadow: var(--ombre-1);
+    border-radius: var(--rayon); padding: .85rem 1.15rem; margin-bottom: .8rem;
     color: var(--encre);
   }
-  /* `line-height` explicite : à 1.4rem, les jambages de « p » et « j » et les accents
+  .bandeau .marque {
+    display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(140deg, var(--accent) 0%, #4F46E5 100%);
+    color: #fff; box-shadow: 0 3px 8px -2px rgba(37,99,235,.5);
+  }
+  /* `line-height` explicite : à 1.42rem, les jambages de « p » et « j » et les accents
      capitaux débordent de la boîte par défaut et se font rogner par le flex. */
   .bandeau .titre {
-    font-size: 1.4rem; font-weight: 650; letter-spacing: -.02em;
+    font-size: 1.42rem; font-weight: 800; letter-spacing: -.03em;
     line-height: 1.45; padding: .1rem 0;
   }
   .bandeau .profil {
-    margin-left: auto; font-size: .78rem; color: var(--encre-douce);
-    font-family: 'Fira Code', monospace; background: var(--fond-doux);
-    border: 1px solid var(--bord); border-radius: 4px; padding: .2rem .55rem;
+    margin-left: auto; font-size: .76rem; font-weight: 600; color: var(--accent-fonce);
+    background: var(--accent-voile); border: 1px solid #DBE6FF;
+    border-radius: 999px; padding: .3rem .75rem;
   }
 
-  /* La zone de saisie est le point d'entrée de chaque onglet : elle doit se lire comme un
+  /* La zone de saisie est le point d'entrée de chaque écran : elle doit se lire comme un
      bloc, pas comme un champ perdu au milieu du blanc. */
   .panneau {
-    border: 1px solid var(--bord); border-radius: 10px;
-    background: linear-gradient(180deg, #fff 0%, var(--fond-doux) 100%);
-    padding: 1.1rem 1.25rem .4rem; margin-bottom: 1.1rem;
+    border: 1px solid var(--bord); border-radius: var(--rayon); background: #fff;
+    box-shadow: var(--ombre-1);
+    padding: 1.15rem 1.3rem .5rem; margin-bottom: 1.15rem;
   }
-  .panneau .intitule { font-size: 1.02rem; font-weight: 650; color: var(--encre); }
-  .panneau .aide { font-size: .85rem; color: var(--encre-douce); margin-top: .15rem; }
+  .panneau .intitule {
+    font-size: 1.06rem; font-weight: 700; color: var(--encre); letter-spacing: -.015em;
+  }
+  .panneau .aide { font-size: .855rem; color: var(--encre-douce); margin-top: .25rem; line-height: 1.5; }
 
   .rappel {
-    display: flex; gap: 1.4rem; flex-wrap: wrap;
-    border: 1px solid var(--bord); border-radius: 8px; background: #fff;
-    padding: .7rem 1rem; margin-bottom: 1.1rem;
+    display: flex; gap: 2rem; flex-wrap: wrap;
+    border: 1px solid var(--bord); border-radius: var(--rayon); background: #fff;
+    box-shadow: var(--ombre-1); padding: .85rem 1.15rem; margin-bottom: 1.3rem;
   }
-  .rappel .item { display: flex; flex-direction: column; gap: .1rem; }
-  .rappel .valeur {
-    font-family: 'Fira Code', monospace; font-weight: 600; color: var(--encre); font-size: .95rem;
-  }
+  .rappel .item { display: flex; flex-direction: column; gap: .15rem; }
+  .rappel .valeur { font-weight: 600; color: var(--encre); font-size: .92rem; }
 
   .carte {
-    border: 1px solid var(--bord); border-radius: 8px; padding: .9rem 1.05rem;
-    background: #fff; margin-bottom: .8rem; transition: border-color var(--transition);
+    border: 1px solid var(--bord); border-radius: var(--rayon); padding: 1rem 1.15rem;
+    background: #fff; margin-bottom: .8rem; box-shadow: var(--ombre-1);
+    transition: box-shadow var(--transition), transform var(--transition), border-color var(--transition);
   }
-  .carte:hover { border-color: #CBD5E1; }
-  .carte .entete { font-weight: 600; color: var(--encre); margin-bottom: .3rem; }
-  .carte .meta   { font-size: .82rem; color: var(--encre-douce); font-family: 'Fira Code', monospace; }
+  .carte:hover {
+    box-shadow: var(--ombre-2); border-color: var(--bord-net); transform: translateY(-1px);
+  }
+  .carte .entete { font-weight: 700; color: var(--encre); margin-bottom: .3rem; letter-spacing: -.01em; }
+  .carte .meta   { font-size: .8rem; color: var(--encre-douce); font-family: 'JetBrains Mono', monospace; }
 
   .source {
-    border-left: 3px solid var(--accent); background: var(--fond-doux);
-    padding: .55rem .8rem; border-radius: 0 6px 6px 0; margin-bottom: .45rem;
+    border: 1px solid var(--bord); border-left: 3px solid var(--accent);
+    background: linear-gradient(90deg, var(--accent-voile) 0%, #fff 55%);
+    padding: .6rem .9rem; border-radius: 0 10px 10px 0; margin-bottom: .5rem;
   }
   .source .titre { font-weight: 600; font-size: .9rem; color: var(--encre); }
-  .source .meta  { font-size: .78rem; color: var(--encre-douce); font-family: 'Fira Code', monospace; }
+  .source .meta  { font-size: .77rem; color: var(--encre-douce); font-family: 'JetBrains Mono', monospace; }
 
   .etiquette {
-    display: inline-block; padding: .16rem .55rem; border-radius: 4px;
-    font-size: .74rem; font-weight: 600; font-family: 'Fira Code', monospace;
+    display: inline-block; padding: .2rem .6rem; border-radius: 999px;
+    font-size: .73rem; font-weight: 600; font-family: 'JetBrains Mono', monospace;
+    border: 1px solid transparent; margin: 0 .12rem .28rem 0;
   }
-  .vert  { background: var(--succes-fond); color: var(--succes); }
-  .rouge { background: var(--alerte-fond); color: var(--alerte); }
-  .gris  { background: #F1F5F9; color: #334155; }
+  .vert  { background: var(--succes-fond); color: var(--succes); border-color: #C6EEDA; }
+  .rouge { background: var(--alerte-fond); color: var(--alerte); border-color: #F9D2CF; }
+  .gris  { background: var(--fond-doux); color: #3B455C; border-color: var(--bord); }
 
   .chiffre {
-    font-family: 'Fira Code', monospace; font-size: 1.55rem; font-weight: 600;
-    color: var(--encre); line-height: 1.2;
+    font-size: 1.75rem; font-weight: 700; color: var(--encre);
+    line-height: 1.2; letter-spacing: -.03em; font-variant-numeric: tabular-nums;
   }
   .legende {
-    font-size: .74rem; color: var(--encre-douce); text-transform: uppercase;
-    letter-spacing: .05em; font-weight: 500; margin-bottom: .15rem;
+    font-size: .71rem; color: var(--encre-douce); text-transform: uppercase;
+    letter-spacing: .07em; font-weight: 600; margin-bottom: .2rem;
   }
 
   /* Les réponses rédigées sont de la prose : au-delà de ~75 caractères par ligne, l'œil
      perd le début de la ligne suivante. */
-  .prose { max-width: 68ch; line-height: 1.6; color: var(--encre); }
+  .prose { max-width: 68ch; line-height: 1.65; color: var(--encre); }
 
   .etapes {
-    font-family: 'Fira Code', monospace; font-size: .8rem; color: var(--encre-douce);
-    margin-bottom: .6rem;
+    font-size: .8rem; color: var(--encre-douce); margin-bottom: .7rem;
+    background: #fff; border: 1px solid var(--bord); border-radius: 999px;
+    padding: .35rem .9rem; display: inline-block; box-shadow: var(--ombre-1);
   }
   .etapes .fait   { color: var(--succes); }
-  .etapes .encours{ color: var(--accent); font-weight: 600; }
+  .etapes .encours{ color: var(--accent); font-weight: 700; }
 
   .vide {
-    border: 1px dashed var(--bord); border-radius: 8px; padding: 1.4rem;
-    text-align: center; color: var(--encre-douce); background: var(--fond-doux);
+    border: 1px dashed var(--bord-net); border-radius: var(--rayon); padding: 1.7rem;
+    text-align: center; color: var(--encre-douce); background: rgba(255,255,255,.6);
   }
 
   /* Le focus clavier doit rester visible : c'est le seul repère de position pour qui
@@ -217,38 +254,71 @@ STYLE = """
   button:focus-visible, input:focus-visible, select:focus-visible, [role="tab"]:focus-visible {
     outline: 2px solid var(--accent) !important; outline-offset: 2px !important;
   }
-  .stButton > button { cursor: pointer; transition: background var(--transition), border-color var(--transition); }
-  .stTabs [data-baseweb="tab"] { cursor: pointer; }
+  .stButton > button {
+    cursor: pointer; border-radius: 10px; font-weight: 600; letter-spacing: -.01em;
+    transition: background var(--transition), border-color var(--transition),
+                box-shadow var(--transition), transform var(--transition);
+  }
+  .stButton > button[kind="primary"] {
+    background: linear-gradient(180deg, #2F6BEE 0%, var(--accent-fonce) 100%);
+    border: 1px solid var(--accent-fonce); box-shadow: 0 2px 6px -1px rgba(37,99,235,.45);
+  }
+  .stButton > button[kind="primary"]:hover { transform: translateY(-1px); box-shadow: 0 5px 12px -2px rgba(37,99,235,.5); }
+  .stButton > button[kind="primary"]:active { transform: translateY(0); }
 
-  /* Navigation verticale : des entrées de menu, pas des boutons d'action. Le liseré à
-     gauche marque la sélection sans compter sur la seule couleur du texte. */
+  /* Champs : le halo au focus vaut confirmation que la frappe ira bien là. */
+  .stTextInput input, .stSelectbox [data-baseweb="select"] > div, .stNumberInput input {
+    border-radius: 10px !important; border-color: var(--bord-net) !important;
+    background: #fff !important;
+  }
+  .stTextInput input:focus {
+    border-color: var(--accent) !important; box-shadow: 0 0 0 3px rgba(37,99,235,.16) !important;
+  }
+  [data-testid="stExpander"] details {
+    border: 1px solid var(--bord) !important; border-radius: var(--rayon) !important;
+    background: #fff; box-shadow: var(--ombre-1);
+  }
+  [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; box-shadow: var(--ombre-1); }
+
+  /* Barre latérale : surface distincte du contenu, sans trait de séparation dur. */
+  [data-testid="stSidebar"] {
+    background: #fff; border-right: 1px solid var(--bord); box-shadow: var(--ombre-1);
+  }
+  /* Navigation verticale : des entrées de menu, pas des boutons d'action. La pastille
+     colorée marque la sélection sans compter sur la seule couleur du texte. */
   [data-testid="stSidebar"] .stButton > button {
     justify-content: flex-start; text-align: left; border: 1px solid transparent;
-    background: transparent; color: var(--encre); font-weight: 500;
-    padding: .42rem .6rem; min-height: 2.4rem; border-radius: 6px;
+    background: transparent; color: var(--encre); font-weight: 600;
+    padding: .45rem .7rem; min-height: 2.5rem; border-radius: 10px; box-shadow: none;
   }
-  [data-testid="stSidebar"] .stButton > button:hover { background: var(--fond-doux); }
+  [data-testid="stSidebar"] .stButton > button:hover {
+    background: var(--fond-doux); transform: none;
+  }
   [data-testid="stSidebar"] .stButton > button[kind="primary"] {
-    background: var(--fond-doux); color: var(--accent); font-weight: 650;
-    box-shadow: inset 3px 0 0 var(--accent);
+    background: var(--accent-voile); color: var(--accent-fonce); font-weight: 700;
+    border-color: #DBE6FF; box-shadow: inset 3px 0 0 var(--accent);
   }
   /* Les sous-entrées vivent dans une colonne indentée : plus discrètes que leur thème. */
   [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button {
-    font-size: .87rem; min-height: 2.1rem; padding: .3rem .55rem;
+    font-size: .86rem; font-weight: 500; min-height: 2.15rem; padding: .32rem .6rem;
   }
   [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button[kind="primary"] {
-    box-shadow: inset 2px 0 0 var(--accent);
+    background: transparent; box-shadow: inset 2px 0 0 var(--accent); border-color: transparent;
   }
   .groupe-acces {
     font-size: .8rem; color: var(--encre-douce); line-height: 1.5;
     display: flex; justify-content: space-between; gap: .5rem;
-    padding: .18rem 0; border-bottom: 1px solid var(--bord);
+    padding: .3rem 0; border-bottom: 1px solid var(--bord);
   }
-  .groupe-acces .compte { font-family: 'Fira Code', monospace; color: var(--encre); }
-  code, pre, .stCode { font-family: 'Fira Code', monospace !important; }
+  .groupe-acces .compte {
+    font-family: 'JetBrains Mono', monospace; color: var(--encre); font-weight: 600;
+  }
+  code, pre, .stCode { font-family: 'JetBrains Mono', monospace !important; }
+  [data-testid="stCode"] { border-radius: 10px; overflow: hidden; }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    .carte:hover, .stButton > button:hover { transform: none !important; }
   }
 </style>
 """
@@ -806,7 +876,8 @@ with st.sidebar:
 
 libelle_profil, titre_poste = PROFILS[profil]
 st.markdown(
-    f"<div class='bandeau'>{LOGO}<span class='titre'>{titre_poste}</span>"
+    f"<div class='bandeau'><span class='marque'>{LOGO}</span>"
+    f"<span class='titre'>{titre_poste}</span>"
     f"<span class='profil'>{libelle_profil}</span></div>"
     f"<div class='rappel'>"
     f"<div class='item'><span class='legende'>Corpus</span>"
