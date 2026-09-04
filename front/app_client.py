@@ -29,12 +29,18 @@ from front.mcp_client import appeler, lister_tools
 
 st.set_page_config(page_title="Sorabel — Poste commercial", layout="wide")
 
+# Le titre suit le profil : afficher « Poste commercial » à un technicien du support
+# donnerait à croire qu'il travaille dans le mauvais outil.
 PROFILS = {
-    "commercial": "Commercial",
-    "support": "Support client",
-    "admin": "Exploitation",
-    "dev": "Développeur",
+    "commercial": ("Commercial", "Poste commercial"),
+    "support": ("Support client", "Poste support"),
+    "admin": ("Exploitation", "Console d'exploitation"),
+    "dev": ("Développeur", "Console d'intégration"),
 }
+
+# Références réelles du catalogue, proposées en exemple : un champ vide n'apprend rien du
+# format attendu, et le premier essai d'un nouvel utilisateur échoue le plus souvent dessus.
+REFERENCES_EXEMPLE = ["REF-8842", "REF-1024", "REF-5719", "REF-3764"]
 
 MOTIF_REFERENCE = re.compile(r"REF-\d{4}", re.IGNORECASE)
 
@@ -103,13 +109,34 @@ STYLE = """
 
   .bandeau {
     display: flex; align-items: center; gap: .6rem;
-    border-bottom: 1px solid var(--bord); padding-bottom: .9rem; margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--bord); padding-bottom: .8rem; margin-bottom: 1.1rem;
     color: var(--encre);
   }
   .bandeau .titre { font-size: 1.4rem; font-weight: 650; letter-spacing: -.02em; }
   .bandeau .profil {
-    margin-left: auto; font-size: .82rem; color: var(--encre-douce);
-    font-family: 'Fira Code', monospace;
+    margin-left: auto; font-size: .78rem; color: var(--encre-douce);
+    font-family: 'Fira Code', monospace; background: var(--fond-doux);
+    border: 1px solid var(--bord); border-radius: 4px; padding: .2rem .55rem;
+  }
+
+  /* La zone de saisie est le point d'entrée de chaque onglet : elle doit se lire comme un
+     bloc, pas comme un champ perdu au milieu du blanc. */
+  .panneau {
+    border: 1px solid var(--bord); border-radius: 10px;
+    background: linear-gradient(180deg, #fff 0%, var(--fond-doux) 100%);
+    padding: 1.1rem 1.25rem .4rem; margin-bottom: 1.1rem;
+  }
+  .panneau .intitule { font-size: 1.02rem; font-weight: 650; color: var(--encre); }
+  .panneau .aide { font-size: .85rem; color: var(--encre-douce); margin-top: .15rem; }
+
+  .rappel {
+    display: flex; gap: 1.4rem; flex-wrap: wrap;
+    border: 1px solid var(--bord); border-radius: 8px; background: #fff;
+    padding: .7rem 1rem; margin-bottom: 1.1rem;
+  }
+  .rappel .item { display: flex; flex-direction: column; gap: .1rem; }
+  .rappel .valeur {
+    font-family: 'Fira Code', monospace; font-weight: 600; color: var(--encre); font-size: .95rem;
   }
 
   .carte {
@@ -258,19 +285,36 @@ def afficher_tableau(resultat: dict, suggestion: str) -> None:
 
 
 def vue_produit(profil: str, tools: list[str]) -> None:
-    st.subheader("Fiche produit")
-    st.caption("Disponibilité, conditions et documentation d'une référence, en une vue.")
-    reference = (
-        st.text_input("Référence produit", placeholder="REF-8842", key="ref_produit")
-        .strip()
-        .upper()
+    st.markdown(
+        "<div class='panneau'><div class='intitule'>Consulter une référence</div>"
+        "<div class='aide'>Stock par entrepôt, conditions tarifaires et documentation "
+        "technique, rassemblés en une vue.</div></div>",
+        unsafe_allow_html=True,
     )
 
-    if not st.button("Consulter", key="btn_produit", type="primary") or not reference:
+    champ, action = st.columns([4, 1])
+    with champ:
+        saisie = st.text_input(
+            "Référence produit", placeholder="REF-8842", key="ref_produit"
+        )
+    with action:
+        st.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
+        lancer = st.button("Consulter", key="btn_produit", type="primary", use_container_width=True)
+
+    st.caption("Références du catalogue, pour essayer :")
+    for exemple, colonne in zip(REFERENCES_EXEMPLE, st.columns(len(REFERENCES_EXEMPLE) + 3)):
+        if colonne.button(exemple, key=f"ex_{exemple}", use_container_width=True):
+            st.session_state["ref_produit"] = exemple
+            st.rerun()
+
+    reference = saisie.strip().upper()
+    if not lancer or not reference:
         return
     if not MOTIF_REFERENCE.fullmatch(reference):
         st.warning("Format attendu : REF-XXXX (quatre chiffres). Exemple : REF-8842.")
         return
+
+    st.divider()
 
     etapes = [e for e, t in [("Stock", "check_stock"), ("Conditions", "ask_database"),
                              ("Documentation", "answer_question")] if t in tools]
@@ -339,17 +383,32 @@ def vue_produit(profil: str, tools: list[str]) -> None:
     suivi.empty()
 
 
+QUESTIONS_EXEMPLE = [
+    "Quel disjoncteur pour un départ moteur en triphasé ?",
+    "Quelle est la procédure de retour d'un produit défectueux ?",
+    "Que faire quand un disjoncteur déclenche de façon répétée ?",
+]
+
+
 def vue_question(profil: str, tools: list[str]) -> None:
-    st.subheader("Poser une question")
-    st.caption(
-        "Documentation technique et procédures SAV. Les réponses citent leurs sources ; "
-        "hors du corpus, l'assistant le dit plutôt que d'inventer."
+    st.markdown(
+        "<div class='panneau'><div class='intitule'>Interroger la documentation</div>"
+        "<div class='aide'>Fiches techniques, notices et procédures SAV. Chaque réponse "
+        "cite ses sources ; hors du corpus, l'assistant le dit plutôt que d'inventer."
+        "</div></div>",
+        unsafe_allow_html=True,
     )
     question = st.text_input(
         "Votre question",
         placeholder="Quel disjoncteur pour un départ moteur en triphasé ?",
         key="question_doc",
     )
+    st.caption("Exemples couverts par le corpus :")
+    for exemple in QUESTIONS_EXEMPLE:
+        if st.button(exemple, key=f"q_{hash(exemple)}", use_container_width=True):
+            st.session_state["question_doc"] = exemple
+            st.rerun()
+
     if st.button("Rechercher", key="btn_question", type="primary") and question:
         with st.spinner("Analyse du corpus documentaire — une dizaine de secondes…"):
             resultat = appeler(profil, "answer_question", {"question": question})
@@ -471,7 +530,7 @@ VUES = [
 with st.sidebar:
     st.markdown("### Sorabel Data Gateway")
     profil = st.selectbox(
-        "Profil connecté", list(PROFILS), format_func=lambda p: PROFILS[p], key="profil"
+        "Profil connecté", list(PROFILS), format_func=lambda p: PROFILS[p][0], key="profil"
     )
     if st.session_state.get("_profil_charge") != profil:
         with st.spinner("Ouverture de la session…"):
@@ -489,9 +548,18 @@ with st.sidebar:
         "appliquée par le serveur, cette page ne fait que la refléter."
     )
 
+libelle_profil, titre_poste = PROFILS[profil]
 st.markdown(
-    f"<div class='bandeau'>{LOGO}<span class='titre'>Poste commercial</span>"
-    f"<span class='profil'>{PROFILS[profil]}</span></div>",
+    f"<div class='bandeau'>{LOGO}<span class='titre'>{titre_poste}</span>"
+    f"<span class='profil'>{libelle_profil}</span></div>"
+    f"<div class='rappel'>"
+    f"<div class='item'><span class='legende'>Corpus</span>"
+    f"<span class='valeur'>400 documents indexés</span></div>"
+    f"<div class='item'><span class='legende'>Données</span>"
+    f"<span class='valeur'>produits · stocks · clients · commandes · ventes</span></div>"
+    f"<div class='item'><span class='legende'>Fonctions accordées</span>"
+    f"<span class='valeur'>{len(tools)} sur 8</span></div>"
+    f"</div>",
     unsafe_allow_html=True,
 )
 
