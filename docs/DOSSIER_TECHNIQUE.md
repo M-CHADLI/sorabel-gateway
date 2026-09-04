@@ -2,8 +2,8 @@
 
 Point d'entrée unique pour reprendre le code. Ce fichier décrit **ce qui est en place**, où
 ça vit et quels contrats lient les paquets entre eux. Les décisions de conception et leurs
-alternatives écartées restent dans `docs/conception_rag.md`, `docs/conception_sql.md` et
-`docs/conception_mcp.md` ; le cahier des charges dans `BRIEF.md`.
+alternatives écartées restent dans `docs/conception.md` ; le cahier des charges dans
+`BRIEF.md`.
 
 État au 4 septembre 2026 : chantiers RAG, Text-to-SQL, gouvernance, serveur MCP et front
 livrés — 117 tests au vert. L'évaluation E6 n'est pas écrite (§11).
@@ -97,7 +97,6 @@ mcp_server/
 
 front/
   app_client.py      poste de travail (navigation 2 niveaux, 8 écrans)
-  app.py             page de debug technique (pipeline brut)
   mcp_client.py      session MCP persistante par profil, thread + asyncio
 
 scripts/
@@ -351,8 +350,10 @@ attribut. Deux pièges Windows déjà payés, à ne pas réintroduire :
   réduit au seul `SORABEL_PROFIL` prive le processus de `SYSTEMROOT`, et Winsock ne s'initialise
   plus (`OSError: [WinError 10106]`).
 
-`front/app.py` — page de debug qui appelle le pipeline en direct, **hors gouvernance**. Utile
-au développement, à ne pas confondre avec le poste de travail.
+Il n'existe **aucun chemin d'accès au pipeline qui contourne le serveur MCP** : tout ce que
+le front affiche est passé par la matrice. Une page de debug appelant les modules en direct
+a existé (`front/app.py`) et a été retirée — dans un projet dont l'argument est la
+gouvernance, un contournement disponible finit par servir.
 
 ---
 
@@ -398,7 +399,7 @@ recalibrer `SEUIL_REFUS`.
 
 ## 12. Limites connues et reste à faire
 
-Trois points qu'un repreneur doit connaître, plutôt que les redécouvrir :
+Deux points qu'un repreneur doit connaître, plutôt que les redécouvrir :
 
 1. **E6 n'est pas implémentée.** `eval/questions_rag.jsonl` et `eval/questions_sql.jsonl`
    existent, `eval/run_eval.py` non. Il faut mesurer Recall@5, MRR et Hit@1 sur les trois
@@ -413,8 +414,27 @@ Trois points qu'un repreneur doit connaître, plutôt que les redécouvrir :
    « tout appel, autorisé comme refusé ». Un refus reste invisible dans `appels.jsonl`. Pour
    le combler : journaliser au niveau du serveur les `tools/call` sur un nom non enregistré.
 
-3. **`front/app.py` contourne la gouvernance** par construction. C'est un outil de debug ;
-   il ne doit pas servir de base à une interface utilisateur.
+---
+
+## 13. Démonstration en 5 minutes
+
+La séquence qui montre le plus en le moins de temps, chaque étape s'appuyant sur la
+précédente.
+
+1. **Le même écran, deux profils.** Ouvrir le poste de travail en `commercial`, puis basculer
+   en `dev` : quatre entrées de menu disparaissent. Rien n'est masqué côté page — le serveur
+   n'a pas enregistré les tools.
+2. **Chercher sans générer.** Documentation → « Rechercher un extrait » sur `REF-8842` :
+   extraits bruts et scores, sans LLM. Puis « Ouvrir un document » sur le `chunk_id` obtenu.
+   Les briques du RAG fonctionnent séparément du tool de haut niveau.
+3. **Une réponse et ses sources.** « Poser une question » : la réponse cite ses documents, et
+   les citations viennent des métadonnées des chunks — pas du modèle.
+4. **Le refus.** Poser une question hors corpus (« quelle est la capitale de l'Australie ? ») :
+   `hors_corpus`, sans qu'aucune génération n'ait lieu. Le distinguer d'une panne à l'écran.
+5. **E5 en direct.** En `support`, Données → « Périmètre accessible » : `prix_achat_ht`,
+   `marge_pct` et `marge_ht` sont **absentes du schéma**. Puis demander les marges : refus,
+   et le SQL rejeté reste affiché. Rebasculer en `commercial` : la même question aboutit.
+6. **La trace.** `logs/appels.jsonl` : une ligne par appel, avec profil, statut, SQL et durée.
 
 ---
 
@@ -423,8 +443,7 @@ Trois points qu'un repreneur doit connaître, plutôt que les redécouvrir :
 | Sujet | Fichier |
 |---|---|
 | Cahier des charges, tests d'acceptance | `BRIEF.md` |
-| Conception RAG (chunking, retrieval, éval) | `docs/conception_rag.md` |
-| Conception Text-to-SQL | `docs/conception_sql.md` |
-| Conception MCP et matrice d'accès | `docs/conception_mcp.md` |
-| Schémas détaillés par chantier | `docs/schemas_{rag,sql,mcp}.md` |
-| Plans d'exécution par phase | `docs/superpowers/plans/` |
+| Décisions de conception et alternatives écartées | `docs/conception.md` |
+| Diagrammes Mermaid des trois chantiers | `docs/schemas.md` |
+| Plans d'exécution par phase (archive datée) | `docs/superpowers/` |
+| Croquis de travail | `docs/croquis/` |

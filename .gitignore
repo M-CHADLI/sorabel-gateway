@@ -9,7 +9,10 @@ data/chroma/
 gouvernance/*.db
 logs/
 
-# Skills tiers installes localement (ui-ux-pro-max et co., 11 Mo)
+# Skills : outillage local de developpement, pas livrable du projet
+.claude/skills/brainstorming/
+.claude/skills/subagent-driven-development/
+.claude/skills/writing-plans/
 .claude/skills/banner-design/
 .claude/skills/brand/
 .claude/skills/design/
