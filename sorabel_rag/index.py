@@ -8,25 +8,33 @@ précisément de *mesurer et documenter* le gain de l'hybride sur le dense seul.
 from __future__ import annotations
 
 import json
+import os
 import pickle
 import re
 import unicodedata
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from .chunking import Chunk
+
+load_dotenv()
 
 RACINE = Path(__file__).resolve().parent.parent
 DOSSIER_CHROMA = RACINE / "data" / "chroma"
 CHEMIN_BM25 = RACINE / "data" / "chroma" / "bm25.pkl"
 NOM_COLLECTION = "sorabel_docs"
 
-# `-base` : 768 dimensions, ~1,1 Go. `-large` (1024 dims) est meilleur mais double le poids
-# pour un corpus de 400 chunks où le lexical porte déjà l'essentiel du signal discriminant.
-MODELE_EMBEDDING = "intfloat/multilingual-e5-base"
-
-# e5 exige ces préfixes : il a été entraîné ainsi. Les omettre dégrade nettement les scores.
-PREFIXE_PASSAGE = "passage: "
-PREFIXE_REQUETE = "query: "
+# Embeddings servis par le déploiement Azure AI Foundry, plus en local : le CPU mettait
+# une centaine de secondes à charger le modèle à chaque démarrage de processus.
+# `text-embedding-3-small` renvoie 1536 dimensions, déjà normalisées (norme 1), ce que la
+# collection Chroma attend puisqu'elle est configurée en distance cosinus.
+MODELE_EMBEDDING = os.environ.get(
+    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"
+)
+# Lot volontairement modeste : 400 chunks passent en 4 requêtes, et un lot trop gros
+# expose au refus pour dépassement de la limite de tokens par requête.
+TAILLE_LOT_EMBEDDING = 128
 
 # `ref-8842` reste UN token : c'est tout l'intérêt du lexical ici. Un découpage naïf sur les
 # caractères non alphanumériques le casserait en « ref » + « 8842 », et ferait perdre à BM25
@@ -51,32 +59,63 @@ def tokeniser(texte: str) -> list[str]:
     return MOTIF_TOKEN.findall(_plier_accents(texte.lower()))
 
 
-_modele = None
+_client_embedding = None
 
 
-def charger_modele():
-    """Chargé paresseusement : l'ingestion et le chunking n'ont pas besoin du modèle."""
-    global _modele
-    if _modele is None:
-        from sentence_transformers import SentenceTransformer
+def _client():
+    """Client OpenAI pointé sur le déploiement d'embeddings Foundry.
 
-        _modele = SentenceTransformer(MODELE_EMBEDDING)
-    return _modele
+    L'endpoint et la clé peuvent être propres au déploiement d'embeddings (modèle servi en
+    « serverless », hors de la ressource Azure OpenAI) ; à défaut on réutilise ceux de la
+    génération, cas où tout est servi par la même ressource.
+    """
+    global _client_embedding
+    if _client_embedding is None:
+        from openai import OpenAI
+
+        base = (
+            os.environ.get("AZURE_EMBEDDING_ENDPOINT")
+            or os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+        ).strip().rstrip("/")
+        if not base:
+            raise RuntimeError(
+                "AZURE_EMBEDDING_ENDPOINT (ou AZURE_OPENAI_ENDPOINT) manquante : "
+                "renseigner le .env pour l'accès aux embeddings."
+            )
+        cle = os.environ.get("AZURE_EMBEDDING_API_KEY") or os.environ.get(
+            "AZURE_OPENAI_API_KEY"
+        )
+        if not cle:
+            raise RuntimeError(
+                "AZURE_EMBEDDING_API_KEY (ou AZURE_OPENAI_API_KEY) manquante."
+            )
+        if not base.endswith("/openai/v1"):
+            base = f"{base}/openai/v1"
+        _client_embedding = OpenAI(base_url=base, api_key=cle)
+    return _client_embedding
 
 
-def encoder_passages(textes: list[str]):
-    modele = charger_modele()
-    return modele.encode(
-        [PREFIXE_PASSAGE + t for t in textes],
-        normalize_embeddings=True,
-        show_progress_bar=True,
-        batch_size=32,
-    )
+def _encoder(textes: list[str]) -> list[list[float]]:
+    """Encode par lots, en préservant l'ordre d'entrée.
+
+    L'API peut renvoyer les objets dans le désordre : on se fie à `index`, jamais à la
+    position dans la réponse — une inversion silencieuse associerait chaque vecteur au
+    mauvais chunk, et l'index entier deviendrait faux sans erreur visible.
+    """
+    vecteurs: list[list[float]] = []
+    for debut in range(0, len(textes), TAILLE_LOT_EMBEDDING):
+        lot = textes[debut : debut + TAILLE_LOT_EMBEDDING]
+        reponse = _client().embeddings.create(model=MODELE_EMBEDDING, input=lot)
+        vecteurs.extend(d.embedding for d in sorted(reponse.data, key=lambda d: d.index))
+    return vecteurs
 
 
-def encoder_requete(texte: str):
-    modele = charger_modele()
-    return modele.encode(PREFIXE_REQUETE + texte, normalize_embeddings=True)
+def encoder_passages(textes: list[str]) -> list[list[float]]:
+    return _encoder(textes)
+
+
+def encoder_requete(texte: str) -> list[float]:
+    return _encoder([texte])[0]
 
 
 def ouvrir_collection(creer: bool = False):
@@ -102,7 +141,7 @@ def indexer(chunks: list[Chunk]) -> dict:
 
     collection.add(
         ids=[c.chunk_id for c in chunks],
-        embeddings=[v.tolist() for v in vecteurs],
+        embeddings=vecteurs,
         documents=[c.texte_brut for c in chunks],
         metadatas=[c.metadonnees for c in chunks],
     )

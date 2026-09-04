@@ -7,10 +7,17 @@ questions. Une baseline qu'on ne peut plus exécuter ne prouve rien.
 
 from __future__ import annotations
 
+import json
+import os
 import re
 from dataclasses import dataclass, field
 
 import numpy as np
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from sorabel_llm.client import completer
 
 from .index import (
     charger_bm25,
@@ -31,16 +38,49 @@ K_RRF = 60  # constante de l'article d'origine (Cormack et al., 2009)
 BONUS_REFERENCE_SUJET = 1.0
 BONUS_REFERENCE_CITEE = 0.1
 
-# `mmarco-mMiniLMv2` a été essayé et écarté : sur nos questions de contrôle, il attribuait à
-# une question hors corpus (« capitale de l'Australie », −4,49) un score SUPÉRIEUR à celui de
-# questions couvertes (−6,02). Ses scores ne sont pas comparables d'une question à l'autre,
-# ce qui interdit d'en tirer un seuil de refus — donc E1.
-# `bge-reranker-v2-m3` sépare correctement : couvertes ≥ 3,5e-4, hors corpus ≤ 3e-5.
-MODELE_RERANKER = "BAAI/bge-reranker-v2-m3"
+# Reranking confié au LLM de génération, en un seul appel « listwise » (tous les candidats
+# notés ensemble). Deux prédécesseurs écartés :
+#   - `bge-reranker-v2-m3` en local : ~34 s par recherche sur CPU, l'essentiel du temps de
+#     réponse ;
+#   - `Cohere-rerank-v4.0-fast` sur Foundry : rapide (~2,8 s) mais le quota du déploiement
+#     tombe en 429 dès deux recherches consécutives, ce qui interdit jusqu'à la calibration
+#     du seuil.
+# Historique plus ancien : `mmarco-mMiniLMv2` notait une question hors corpus (« capitale de
+# l'Australie », −4,49) AU-DESSUS de questions couvertes (−6,02) ; ses scores n'étant pas
+# comparables d'une question à l'autre, aucun seuil de refus n'en était tirable, donc pas
+# d'E1. Le LLM, lui, note sur un barème explicite et donne 0 partout hors corpus.
+MODELE_RERANKER = "llm-listwise"
 
-# Provisoire, ordre de grandeur issu de 8 questions de contrôle. À calibrer sur
-# `eval/questions_rag.jsonl` en traçant les deux distributions (cf. §4 de la conception).
-SEUIL_REFUS = 1e-4
+# Barème du prompt : 1,0 répond directement, 0,5 sujet proche, 0,0 sans rapport. Une
+# question hors corpus obtient 0 sur tous les candidats, d'où un seuil franc à mi-chemin
+# entre « sans rapport » et « sujet proche ».
+SEUIL_REFUS = 0.3
+
+# Le prompt porte tous les candidats : on tronque chacun pour borner la taille d'entrée
+# sans perdre l'amorce, seule partie qui sert à juger la pertinence.
+LONGUEUR_EXTRAIT_RERANK = 700
+
+# Les échecs observés sont transitoires (JSON tronqué) : une seconde tentative suffit
+# presque toujours.
+TENTATIVES_RERANK = 3
+
+
+class RerankIndisponible(RuntimeError):
+    """Le reranking n'a pas abouti : panne technique, à ne pas confondre avec un refus
+    documentaire (`hors_corpus`), qui, lui, signifie que le corpus ne couvre pas le sujet."""
+
+PROMPT_RERANK = """Tu notes la pertinence de chaque document pour répondre à la question.
+
+Barème :
+- 1.0 : le document répond directement à la question
+- 0.5 : le document traite d'un sujet proche sans répondre
+- 0.0 : le document est sans rapport avec la question
+
+Note CHAQUE document indépendamment ; plusieurs documents peuvent avoir la même note. Si
+aucun document ne concerne la question, mets 0.0 partout — ne cherche pas à en favoriser un.
+
+Réponds UNIQUEMENT par un JSON de la forme {"scores": [{"i": <index>, "s": <note>}]},
+contenant une entrée pour TOUS les documents, sans texte autour."""
 
 # Une requête réduite à une référence vise le document principal du produit, pas une note
 # qui la mentionne en passant. BM25 classe l'inverse : il normalise par la longueur.
@@ -82,7 +122,6 @@ def filtre_collections(collections_autorisees: frozenset[str] | None) -> dict | 
         return {"type_document": "__aucune_collection_autorisee__"}  # ne matche jamais
     return conditions[0] if len(conditions) == 1 else {"$or": conditions}
 
-_reranker = None
 
 
 @dataclass
@@ -153,7 +192,7 @@ def rechercher(
     # ---- moteur dense ----------------------------------------------------------------
     vecteur = encoder_requete(requete)
     reponse = collection.query(
-        query_embeddings=[vecteur.tolist()],
+        query_embeddings=[vecteur],
         n_results=profondeur,
         where=filtre,
         include=["metadatas", "documents", "distances"],
@@ -278,12 +317,53 @@ def _ids_autorises(collection, filtre: dict | None) -> set[str] | None:
     return set(collection.get(where=filtre, include=[])["ids"])
 
 
-def _reranker_scores(requete: str, textes: list[str]):
-    global _reranker
-    if _reranker is None:
-        from sentence_transformers import CrossEncoder
+def _extraire_json(reponse: str) -> dict:
+    """Isole l'objet JSON d'une réponse LLM, même entourée de texte ou d'un bloc Markdown."""
+    debut, fin = reponse.find("{"), reponse.rfind("}")
+    if debut == -1 or fin <= debut:
+        raise ValueError("aucun objet JSON dans la réponse du reranker")
+    return json.loads(reponse[debut : fin + 1])
 
-        _reranker = CrossEncoder(MODELE_RERANKER)
+
+def _reranker_scores(requete: str, textes: list[str]) -> list[float]:
+    """Pertinence de chaque texte pour la requête, dans l'ordre d'entrée.
+
+    Un seul appel pour tous les candidats : le modèle les compare entre eux, et le coût ne
+    dépend pas de la profondeur. Un index absent de la réponse vaut 0 — mieux vaut refuser
+    un document que le classer sur une note inventée.
+
+    Une réponse inexploitable est retentée : l'échec est le plus souvent transitoire (JSON
+    tronqué ou entouré de texte). Si toutes les tentatives échouent, on LÈVE — surtout pas
+    des notes nulles, qui feraient passer une panne pour un « hors corpus » alors que le
+    corpus contient peut-être la réponse. E1 exige que le client puisse distinguer un refus
+    documentaire d'une défaillance technique ; les confondre trahirait les deux.
+    """
     if not textes:
         return []
-    return _reranker.predict([(requete, texte) for texte in textes])
+
+    extraits = "\n\n".join(
+        f"[{i}] {texte[:LONGUEUR_EXTRAIT_RERANK]}" for i, texte in enumerate(textes)
+    )
+    messages = [
+        {"role": "system", "content": PROMPT_RERANK},
+        {"role": "user", "content": f"Question : {requete}\n\nDocuments :\n{extraits}"},
+    ]
+
+    derniere_erreur: Exception | None = None
+    for _ in range(TENTATIVES_RERANK):
+        try:
+            notes = _extraire_json(completer(messages))["scores"]
+        except Exception as erreur:  # réponse absente, tronquée, ou JSON malformé
+            derniere_erreur = erreur
+            continue
+        scores = [0.0] * len(textes)
+        for note in notes:
+            indice = int(note["i"])
+            if 0 <= indice < len(textes):
+                scores[indice] = float(note["s"])
+        return scores
+
+    raise RerankIndisponible(
+        f"le reranker n'a pas produit de notation exploitable en {TENTATIVES_RERANK} "
+        f"tentatives : {derniere_erreur}"
+    ) from derniere_erreur
