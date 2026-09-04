@@ -8,3 +8,12 @@ data/chroma/
 # Gouvernance : régénérable par scripts/seed_gouvernance.py
 gouvernance/*.db
 logs/
+
+# Skills tiers installes localement (ui-ux-pro-max et co., 11 Mo)
+.claude/skills/banner-design/
+.claude/skills/brand/
+.claude/skills/design/
+.claude/skills/design-system/
+.claude/skills/slides/
+.claude/skills/ui-styling/
+.claude/skills/ui-ux-pro-max/

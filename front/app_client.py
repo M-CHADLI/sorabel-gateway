@@ -5,11 +5,15 @@ sur une référence, suivre une commande) et non autour du catalogue de tools : 
 produit rassemble ici documentation, stock et conditions tarifaires, là où le serveur expose
 trois tools distincts.
 
+Direction visuelle : Minimalism & Swiss Style (grille, contraste élevé, typographie
+fonctionnelle) — registre adapté aux outils métier denses. Fira Sans porte l'interface,
+Fira Code les données à lire au caractère près (références, identifiants, SQL).
+
 Tout passe par le serveur MCP (`front.mcp_client`) : la page n'applique aucune règle d'accès
 elle-même, elle reflète ce que la matrice autorise pour le profil connecté. Les garanties du
-brief s'y retrouvent telles quelles — sources citées (E1), SQL exécuté ou rejeté toujours
-visible (E3), tools masqués hors périmètre (E4), refus traduits en message clair et jamais
-confondus avec une panne (E5).
+brief s'y retrouvent — sources citées (E1), SQL exécuté ou rejeté toujours visible (E3),
+tools masqués hors périmètre (E4), refus traduits en message clair et jamais confondus avec
+une panne (E5).
 """
 
 import sys
@@ -23,9 +27,7 @@ import streamlit as st
 
 from front.mcp_client import appeler, lister_tools
 
-st.set_page_config(
-    page_title="Sorabel — Poste commercial", page_icon="⚡", layout="wide"
-)
+st.set_page_config(page_title="Sorabel — Poste commercial", layout="wide")
 
 PROFILS = {
     "commercial": "Commercial",
@@ -36,52 +38,140 @@ PROFILS = {
 
 MOTIF_REFERENCE = re.compile(r"REF-\d{4}", re.IGNORECASE)
 
-# Un refus n'est pas une panne : chaque statut a son registre visuel et son message, pour
-# que l'utilisateur sache s'il doit reformuler, demander un droit, ou signaler un incident.
+# Un refus n'est pas une panne : chaque statut a son registre et son conseil de reprise,
+# pour que l'utilisateur sache s'il doit reformuler, demander un droit ou signaler un
+# incident. Une erreur sans issue est un cul-de-sac.
 REFUS = {
-    "hors_corpus": ("info", "Aucun document du corpus ne traite ce sujet."),
-    "hors_schema": ("warning", "Cette question ne correspond à aucune donnée disponible."),
-    "non_autorise": ("warning", "Votre profil n'a pas accès à cette information."),
-    "refuse_ecriture": ("error", "Refusé : seule la consultation des données est autorisée."),
-    "erreur": ("error", "Incident technique — l'information n'a pas pu être récupérée."),
+    "hors_corpus": (
+        "info",
+        "Aucun document du corpus ne traite ce sujet.",
+        "Reformulez avec les termes du catalogue, ou cherchez par référence (REF-XXXX).",
+    ),
+    "hors_schema": (
+        "warning",
+        "Cette question ne correspond à aucune donnée disponible.",
+        "Consultez « Données consultables par votre profil » pour voir ce qui est interrogeable.",
+    ),
+    "non_autorise": (
+        "warning",
+        "Votre profil n'a pas accès à cette information.",
+        "Demandez l'accès à l'exploitation si votre mission le justifie.",
+    ),
+    "refuse_ecriture": (
+        "error",
+        "Refusé : seule la consultation des données est autorisée.",
+        "Aucune modification n'est possible depuis cet outil, par conception.",
+    ),
+    "erreur": (
+        "error",
+        "Incident technique — l'information n'a pas pu être récupérée.",
+        "Relancez la recherche ; si l'incident persiste, signalez-le à l'exploitation.",
+    ),
 }
+
+# SVG plutôt qu'emoji : un emoji change de dessin selon la plateforme, n'est pas
+# redimensionnable proprement et se fait lire à voix haute par les lecteurs d'écran.
+LOGO = """<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>"""
 
 STYLE = """
 <style>
-  .block-container { padding-top: 2.2rem; max-width: 1180px; }
-  h1, h2, h3 { letter-spacing: -0.02em; }
+  @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700&display=swap');
+
+  :root {
+    --encre:        #0F172A;
+    --encre-douce:  #475569;
+    --bord:         #E2E8F0;
+    --fond-doux:    #F8FAFC;
+    --accent:       #1D4ED8;
+    --succes:       #15803D;
+    --succes-fond:  #DCFCE7;
+    --alerte:       #B91C1C;
+    --alerte-fond:  #FEE2E2;
+    --transition:   180ms ease;
+  }
+
+  html, body, [class*="css"], .stMarkdown, button, input, select, textarea {
+    font-family: 'Fira Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  .block-container { padding-top: 2rem; max-width: 1200px; }
+
+  /* Contraste : 4.5:1 minimum sur tout le texte courant. */
+  .stMarkdown, .stMarkdown p, label, .stCaption { color: var(--encre); }
+  .stCaption, [data-testid="stCaptionContainer"] { color: var(--encre-douce) !important; }
 
   .bandeau {
-    display: flex; align-items: baseline; gap: .75rem;
-    border-bottom: 1px solid #E5E7EB; padding-bottom: .9rem; margin-bottom: 1.6rem;
+    display: flex; align-items: center; gap: .6rem;
+    border-bottom: 1px solid var(--bord); padding-bottom: .9rem; margin-bottom: 1.5rem;
+    color: var(--encre);
   }
-  .bandeau .titre { font-size: 1.45rem; font-weight: 650; color: #111827; }
-  .bandeau .sous  { font-size: .9rem; color: #6B7280; }
+  .bandeau .titre { font-size: 1.4rem; font-weight: 650; letter-spacing: -.02em; }
+  .bandeau .profil {
+    margin-left: auto; font-size: .82rem; color: var(--encre-douce);
+    font-family: 'Fira Code', monospace;
+  }
 
   .carte {
-    border: 1px solid #E5E7EB; border-radius: 10px; padding: 1rem 1.15rem;
-    background: #fff; margin-bottom: .85rem;
+    border: 1px solid var(--bord); border-radius: 8px; padding: .9rem 1.05rem;
+    background: #fff; margin-bottom: .8rem; transition: border-color var(--transition);
   }
-  .carte .entete { font-weight: 600; color: #111827; margin-bottom: .35rem; }
-  .carte .meta   { font-size: .82rem; color: #6B7280; }
+  .carte:hover { border-color: #CBD5E1; }
+  .carte .entete { font-weight: 600; color: var(--encre); margin-bottom: .3rem; }
+  .carte .meta   { font-size: .82rem; color: var(--encre-douce); font-family: 'Fira Code', monospace; }
 
   .source {
-    border-left: 3px solid #2563EB; background: #F8FAFC;
-    padding: .6rem .85rem; border-radius: 0 6px 6px 0; margin-bottom: .5rem;
+    border-left: 3px solid var(--accent); background: var(--fond-doux);
+    padding: .55rem .8rem; border-radius: 0 6px 6px 0; margin-bottom: .45rem;
   }
-  .source .titre { font-weight: 600; font-size: .92rem; color: #1F2937; }
-  .source .meta  { font-size: .8rem; color: #6B7280; }
+  .source .titre { font-weight: 600; font-size: .9rem; color: var(--encre); }
+  .source .meta  { font-size: .78rem; color: var(--encre-douce); font-family: 'Fira Code', monospace; }
 
   .etiquette {
-    display: inline-block; padding: .15rem .55rem; border-radius: 999px;
-    font-size: .75rem; font-weight: 600; letter-spacing: .01em;
+    display: inline-block; padding: .16rem .55rem; border-radius: 4px;
+    font-size: .74rem; font-weight: 600; font-family: 'Fira Code', monospace;
   }
-  .vert  { background: #DCFCE7; color: #166534; }
-  .rouge { background: #FEE2E2; color: #991B1B; }
-  .gris  { background: #F3F4F6; color: #374151; }
+  .vert  { background: var(--succes-fond); color: var(--succes); }
+  .rouge { background: var(--alerte-fond); color: var(--alerte); }
+  .gris  { background: #F1F5F9; color: #334155; }
 
-  .chiffre { font-size: 1.6rem; font-weight: 650; color: #111827; line-height: 1.1; }
-  .legende { font-size: .78rem; color: #6B7280; text-transform: uppercase; letter-spacing: .04em; }
+  .chiffre {
+    font-family: 'Fira Code', monospace; font-size: 1.55rem; font-weight: 600;
+    color: var(--encre); line-height: 1.2;
+  }
+  .legende {
+    font-size: .74rem; color: var(--encre-douce); text-transform: uppercase;
+    letter-spacing: .05em; font-weight: 500; margin-bottom: .15rem;
+  }
+
+  /* Les réponses rédigées sont de la prose : au-delà de ~75 caractères par ligne, l'œil
+     perd le début de la ligne suivante. */
+  .prose { max-width: 68ch; line-height: 1.6; color: var(--encre); }
+
+  .etapes {
+    font-family: 'Fira Code', monospace; font-size: .8rem; color: var(--encre-douce);
+    margin-bottom: .6rem;
+  }
+  .etapes .fait   { color: var(--succes); }
+  .etapes .encours{ color: var(--accent); font-weight: 600; }
+
+  .vide {
+    border: 1px dashed var(--bord); border-radius: 8px; padding: 1.4rem;
+    text-align: center; color: var(--encre-douce); background: var(--fond-doux);
+  }
+
+  /* Le focus clavier doit rester visible : c'est le seul repère de position pour qui
+     n'utilise pas la souris. */
+  button:focus-visible, input:focus-visible, select:focus-visible, [role="tab"]:focus-visible {
+    outline: 2px solid var(--accent) !important; outline-offset: 2px !important;
+  }
+  .stButton > button { cursor: pointer; transition: background var(--transition), border-color var(--transition); }
+  .stTabs [data-baseweb="tab"] { cursor: pointer; }
+  code, pre, .stCode { font-family: 'Fira Code', monospace !important; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+  }
 </style>
 """
 st.markdown(STYLE, unsafe_allow_html=True)
@@ -90,10 +180,42 @@ st.markdown(STYLE, unsafe_allow_html=True)
 # --- présentation ----------------------------------------------------------------------
 
 
-def afficher_refus(resultat: dict) -> None:
+def afficher_refus(resultat: dict, cle_reprise: str | None = None) -> None:
+    """Message + issue de sortie. `role=alert` fait annoncer l'incident aux lecteurs
+    d'écran, qui ne voient pas la couleur du bandeau."""
     statut = resultat.get("statut", "erreur")
-    niveau, defaut = REFUS.get(statut, REFUS["erreur"])
+    niveau, defaut, conseil = REFUS.get(statut, REFUS["erreur"])
     getattr(st, niveau)(resultat.get("message") or defaut)
+    st.markdown(
+        f"<div role='alert' style='font-size:.85rem;color:var(--encre-douce);"
+        f"margin:-.4rem 0 .6rem'>{conseil}</div>",
+        unsafe_allow_html=True,
+    )
+    if statut == "erreur" and cle_reprise:
+        st.button("Réessayer", key=cle_reprise)
+
+
+def afficher_vide(message: str, suggestion: str) -> None:
+    st.markdown(
+        f"<div class='vide'><div style='font-weight:600;color:var(--encre)'>{message}</div>"
+        f"<div style='font-size:.85rem;margin-top:.3rem'>{suggestion}</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def afficher_etapes(etapes: list[str], courante: int) -> None:
+    """Une attente de plusieurs secondes sans repère passe pour un blocage."""
+    rendu = []
+    for i, nom in enumerate(etapes):
+        classe = "fait" if i < courante else ("encours" if i == courante else "")
+        marque = "✓" if i < courante else ("▸" if i == courante else "·")
+        rendu.append(f"<span class='{classe}'>{marque} {nom}</span>")
+    st.markdown(
+        f"<div class='etapes'>Étape {min(courante + 1, len(etapes))} sur {len(etapes)} &nbsp;&nbsp;"
+        + " &nbsp; ".join(rendu)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def afficher_sources(citations: list[dict]) -> None:
@@ -109,6 +231,10 @@ def afficher_sources(citations: list[dict]) -> None:
         )
 
 
+def afficher_reponse(texte: str) -> None:
+    st.markdown(f"<div class='prose'>{texte}</div>", unsafe_allow_html=True)
+
+
 def afficher_sql(resultat: dict) -> None:
     """E3 : la requête est montrée qu'elle ait été exécutée ou rejetée."""
     if resultat.get("sql"):
@@ -116,10 +242,10 @@ def afficher_sql(resultat: dict) -> None:
             st.code(resultat["sql"], language="sql")
 
 
-def afficher_tableau(resultat: dict) -> None:
+def afficher_tableau(resultat: dict, suggestion: str) -> None:
     colonnes, lignes = resultat.get("colonnes", []), resultat.get("lignes", [])
     if not lignes:
-        st.caption("Aucun résultat.")
+        afficher_vide("Aucune donnée ne correspond", suggestion)
         return
     st.dataframe(
         [dict(zip(colonnes, ligne)) for ligne in lignes], use_container_width=True
@@ -133,26 +259,35 @@ def afficher_tableau(resultat: dict) -> None:
 
 def vue_produit(profil: str, tools: list[str]) -> None:
     st.subheader("Fiche produit")
-    st.caption(
-        "Documentation, disponibilité et conditions d'une référence, rassemblées en une vue."
+    st.caption("Disponibilité, conditions et documentation d'une référence, en une vue.")
+    reference = (
+        st.text_input("Référence produit", placeholder="REF-8842", key="ref_produit")
+        .strip()
+        .upper()
     )
-    reference = st.text_input(
-        "Référence", placeholder="REF-8842", key="ref_produit"
-    ).strip().upper()
 
     if not st.button("Consulter", key="btn_produit", type="primary") or not reference:
         return
     if not MOTIF_REFERENCE.fullmatch(reference):
-        st.warning("Format attendu : REF-XXXX (quatre chiffres).")
+        st.warning("Format attendu : REF-XXXX (quatre chiffres). Exemple : REF-8842.")
         return
 
+    etapes = [e for e, t in [("Stock", "check_stock"), ("Conditions", "ask_database"),
+                             ("Documentation", "answer_question")] if t in tools]
+    suivi = st.empty()
+
     if "check_stock" in tools:
+        with suivi.container():
+            afficher_etapes(etapes, 0)
         st.markdown("#### Disponibilité")
         stock = appeler(profil, "check_stock", {"ref": reference})
         if stock.get("statut") == "ok":
             colonnes, lignes = stock.get("colonnes", []), stock.get("lignes", [])
             if not lignes:
-                st.caption("Aucun stock enregistré pour cette référence.")
+                afficher_vide(
+                    "Aucun stock enregistré",
+                    "La référence existe peut-être au catalogue sans être stockée.",
+                )
             else:
                 for entrepot, colonne in zip(lignes, st.columns(len(lignes))):
                     donnees = dict(zip(colonnes, entrepot))
@@ -169,9 +304,11 @@ def vue_produit(profil: str, tools: list[str]) -> None:
                             unsafe_allow_html=True,
                         )
         else:
-            afficher_refus(stock)
+            afficher_refus(stock, "reprise_stock")
 
     if "ask_database" in tools:
+        with suivi.container():
+            afficher_etapes(etapes, etapes.index("Conditions"))
         st.markdown("#### Conditions commerciales")
         conditions = appeler(
             profil,
@@ -179,65 +316,68 @@ def vue_produit(profil: str, tools: list[str]) -> None:
             {"question": f"donne le nom, la catégorie et le prix de vente du produit {reference}"},
         )
         if conditions.get("statut") == "ok":
-            afficher_tableau(conditions)
+            afficher_tableau(conditions, f"{reference} n'est peut-être plus au catalogue.")
         else:
-            afficher_refus(conditions)
+            afficher_refus(conditions, "reprise_conditions")
         afficher_sql(conditions)
 
     if "answer_question" in tools:
+        with suivi.container():
+            afficher_etapes(etapes, etapes.index("Documentation"))
         st.markdown("#### Ce que dit la documentation")
-        with st.spinner("Analyse du corpus documentaire…"):
-            doc = appeler(
-                profil,
-                "answer_question",
-                {"question": f"quelles sont les caractéristiques techniques du {reference} ?"},
-            )
+        doc = appeler(
+            profil,
+            "answer_question",
+            {"question": f"quelles sont les caractéristiques techniques du {reference} ?"},
+        )
         if doc.get("statut") == "ok":
-            st.write(doc["reponse"])
+            afficher_reponse(doc["reponse"])
             afficher_sources(doc.get("citations", []))
         else:
-            afficher_refus(doc)
+            afficher_refus(doc, "reprise_doc")
+
+    suivi.empty()
 
 
 def vue_question(profil: str, tools: list[str]) -> None:
     st.subheader("Poser une question")
     st.caption(
-        "Documentation technique et procédures SAV. Les réponses citent toujours leurs sources ; "
+        "Documentation technique et procédures SAV. Les réponses citent leurs sources ; "
         "hors du corpus, l'assistant le dit plutôt que d'inventer."
     )
     question = st.text_input(
-        "Question",
+        "Votre question",
         placeholder="Quel disjoncteur pour un départ moteur en triphasé ?",
         key="question_doc",
     )
     if st.button("Rechercher", key="btn_question", type="primary") and question:
-        with st.spinner("Analyse du corpus documentaire…"):
+        with st.spinner("Analyse du corpus documentaire — une dizaine de secondes…"):
             resultat = appeler(profil, "answer_question", {"question": question})
         if resultat.get("statut") == "ok":
-            st.write(resultat["reponse"])
+            afficher_reponse(resultat["reponse"])
             afficher_sources(resultat.get("citations", []))
         else:
-            afficher_refus(resultat)
+            afficher_refus(resultat, "reprise_question")
 
 
 def vue_donnees(profil: str, tools: list[str]) -> None:
     st.subheader("Interroger les données")
     st.caption(
         "Produits, stocks, clients, commandes et ventes, en langage naturel. "
-        "Consultation seule : la requête produite est toujours affichée."
+        "Consultation seule : la requête produite reste toujours consultable."
     )
     question = st.text_input(
-        "Question",
-        placeholder="Combien de commandes en avril ?",
-        key="question_sql",
+        "Votre question", placeholder="Combien de commandes en avril ?", key="question_sql"
     )
     if st.button("Interroger", key="btn_donnees", type="primary") and question:
         with st.spinner("Interrogation de la base…"):
             resultat = appeler(profil, "ask_database", {"question": question})
         if resultat.get("statut") == "ok":
-            afficher_tableau(resultat)
+            afficher_tableau(
+                resultat, "Essayez en nommant explicitement la table ou la période."
+            )
         else:
-            afficher_refus(resultat)
+            afficher_refus(resultat, "reprise_donnees")
         afficher_sql(resultat)
 
     if "get_schema" in tools:
@@ -251,17 +391,22 @@ def vue_donnees(profil: str, tools: list[str]) -> None:
 
 def vue_commande(profil: str, tools: list[str]) -> None:
     st.subheader("Suivre une commande")
-    identifiant = st.text_input(
-        "Identifiant", placeholder="CMD-2025-0004", key="id_commande"
-    ).strip().upper()
+    identifiant = (
+        st.text_input("Identifiant de commande", placeholder="CMD-2025-0004", key="id_commande")
+        .strip()
+        .upper()
+    )
     if st.button("Rechercher", key="btn_commande", type="primary") and identifiant:
         resultat = appeler(profil, "order_status", {"order_id": identifiant})
         if resultat.get("statut") != "ok":
-            afficher_refus(resultat)
+            afficher_refus(resultat, "reprise_commande")
             return
         colonnes, lignes = resultat.get("colonnes", []), resultat.get("lignes", [])
         if not lignes:
-            st.caption("Aucune commande à cet identifiant.")
+            afficher_vide(
+                "Aucune commande à cet identifiant",
+                "Vérifiez le format : CMD-AAAA-NNNN, par exemple CMD-2025-0004.",
+            )
             return
         donnees = dict(zip(colonnes, lignes[0]))
         for (libelle, valeur), colonne in zip(
@@ -284,7 +429,7 @@ def vue_documentation(profil: str, tools: list[str]) -> None:
     st.subheader("Parcourir la documentation")
     st.caption("Inventaire des documents indexés, restreint au périmètre de votre profil.")
     type_document = st.selectbox(
-        "Type",
+        "Type de document",
         [None, "fiche_technique", "notice", "procedure_sav", "note_interne"],
         format_func=lambda t: "Tous les types" if t is None else t.replace("_", " "),
         key="type_doc",
@@ -292,9 +437,15 @@ def vue_documentation(profil: str, tools: list[str]) -> None:
     if st.button("Afficher", key="btn_sources", type="primary"):
         resultat = appeler(profil, "list_sources", {"type_document": type_document})
         if resultat.get("statut") != "ok":
-            afficher_refus(resultat)
+            afficher_refus(resultat, "reprise_sources")
             return
         sources = resultat.get("sources", [])
+        if not sources:
+            afficher_vide(
+                "Aucun document de ce type",
+                "Choisissez « Tous les types », ou vérifiez les droits de votre profil.",
+            )
+            return
         st.caption(f"{len(sources)} document(s) accessible(s).")
         for source in sources[:60]:
             versions = ", ".join(source.get("versions", []))
@@ -330,7 +481,7 @@ with st.sidebar:
 
     st.markdown("**Accès accordés**")
     st.markdown(
-        "".join(f"<span class='etiquette gris'>{t}</span> " for t in tools),
+        " ".join(f"<span class='etiquette gris'>{t}</span>" for t in tools),
         unsafe_allow_html=True,
     )
     st.caption(
@@ -339,14 +490,17 @@ with st.sidebar:
     )
 
 st.markdown(
-    f"<div class='bandeau'><span class='titre'>Poste commercial</span>"
-    f"<span class='sous'>{PROFILS[profil]}</span></div>",
+    f"<div class='bandeau'>{LOGO}<span class='titre'>Poste commercial</span>"
+    f"<span class='profil'>{PROFILS[profil]}</span></div>",
     unsafe_allow_html=True,
 )
 
 vues_actives = [(nom, vue) for nom, tool, vue in VUES if tool in tools]
 if not vues_actives:
-    st.warning("Aucune fonctionnalité n'est accessible avec ce profil.")
+    afficher_vide(
+        "Aucune fonctionnalité accessible",
+        "Ce profil n'a de droit sur aucun tool. Contactez l'exploitation.",
+    )
 else:
     for (nom, vue), onglet in zip(vues_actives, st.tabs([n for n, _ in vues_actives])):
         with onglet:
