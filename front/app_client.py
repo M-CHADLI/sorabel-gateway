@@ -502,9 +502,113 @@ def vue_commande(profil: str, tools: list[str]) -> None:
                 )
 
 
-def vue_documentation(profil: str, tools: list[str]) -> None:
-    st.subheader("Parcourir la documentation")
-    st.caption("Inventaire des documents indexés, restreint au périmètre de votre profil.")
+def vue_recherche(profil: str, tools: list[str]) -> None:
+    """`search_docs` : les extraits bruts et leurs scores, sans passer par le LLM.
+
+    C'est la brique du RAG utile à qui veut juger la source lui-même — un intégrateur, ou
+    un technicien qui préfère lire le passage d'origine plutôt qu'une reformulation.
+    """
+    st.markdown(
+        "<div class='panneau'><div class='intitule'>Rechercher sans générer</div>"
+        "<div class='aide'>Extraits classés par pertinence, sans reformulation : vous lisez "
+        "le texte d'origine. Plus rapide qu'une réponse rédigée.</div></div>",
+        unsafe_allow_html=True,
+    )
+    requete = st.text_input("Termes recherchés", placeholder="REF-8842", key="requete_docs")
+    nombre = st.slider("Nombre d'extraits", 1, 10, 5, key="k_docs")
+
+    if st.button("Rechercher", key="btn_recherche", type="primary") and requete:
+        with st.spinner("Recherche dans le corpus…"):
+            resultat = appeler(
+                profil, "search_docs", {"requete": requete, "k": nombre}
+            )
+        if resultat.get("statut") != "ok":
+            afficher_refus(resultat, "reprise_recherche")
+            return
+        extraits = resultat.get("resultats", [])
+        if not extraits:
+            afficher_vide(
+                "Aucun extrait ne correspond",
+                "Essayez une référence (REF-XXXX) ou des termes du catalogue.",
+            )
+            return
+        for extrait in extraits:
+            st.markdown(
+                f"<div class='carte'><div class='entete'>{extrait.get('titre', '')}</div>"
+                f"<div class='meta'>{extrait.get('reference') or '—'} · "
+                f"pertinence {extrait.get('score', 0):.3f} · "
+                f"{extrait.get('chunk_id', '')}</div></div>",
+                unsafe_allow_html=True,
+            )
+            with st.expander("Lire l'extrait"):
+                st.markdown(
+                    f"<div class='prose'>{extrait.get('texte', '')}</div>",
+                    unsafe_allow_html=True,
+                )
+
+
+def vue_document(profil: str, tools: list[str]) -> None:
+    """`get_document` : le document canonique complet, par identifiant ou par référence."""
+    st.markdown(
+        "<div class='panneau'><div class='intitule'>Ouvrir un document</div>"
+        "<div class='aide'>Par référence produit, ou par identifiant exact repéré dans une "
+        "recherche. Sans version précisée, la version courante est servie.</div></div>",
+        unsafe_allow_html=True,
+    )
+    par_reference, par_identifiant = st.columns(2)
+    with par_reference:
+        reference = st.text_input("Référence produit", placeholder="REF-1024", key="doc_ref")
+        version = st.text_input("Version (facultatif)", placeholder="2.1", key="doc_version")
+    with par_identifiant:
+        doc_id = st.text_input(
+            "Ou identifiant du document",
+            placeholder="fiche_technique:REF-1024:v2.1",
+            key="doc_id",
+        )
+
+    if st.button("Ouvrir", key="btn_document", type="primary"):
+        if not (reference or doc_id):
+            st.warning("Renseignez une référence produit ou un identifiant de document.")
+            return
+        resultat = appeler(
+            profil,
+            "get_document",
+            {
+                "doc_id": doc_id or None,
+                "reference": reference.strip().upper() or None,
+                "version": version.strip() or None,
+            },
+        )
+        if resultat.get("statut") != "ok":
+            afficher_refus(resultat, "reprise_document")
+            return
+        document = resultat.get("document", {})
+        st.markdown(
+            f"<div class='carte'><div class='entete'>{document.get('titre', '')}</div>"
+            f"<div class='meta'>{document.get('reference') or '—'} · "
+            f"{document.get('type_document', '').replace('_', ' ')} · "
+            f"version {document.get('version', '')} · {document.get('date', '')}</div></div>",
+            unsafe_allow_html=True,
+        )
+        # Le canonique conserve le document découpé en sections : les restituer telles
+        # quelles préserve la structure d'origine, qu'un aplatissement effacerait.
+        for section in document.get("sections", []):
+            st.markdown(f"##### {section.get('titre', '')}")
+            st.markdown(
+                f"<div class='prose'>{section.get('contenu', '').replace(chr(10), '<br>')}</div>",
+                unsafe_allow_html=True,
+            )
+        if references := document.get("references_citees"):
+            st.caption("Références citées : " + ", ".join(references))
+
+
+def vue_inventaire(profil: str, tools: list[str]) -> None:
+    st.markdown(
+        "<div class='panneau'><div class='intitule'>Inventaire du corpus</div>"
+        "<div class='aide'>Documents indexés et leurs versions, restreints au périmètre de "
+        "votre profil.</div></div>",
+        unsafe_allow_html=True,
+    )
     type_document = st.selectbox(
         "Type de document",
         [None, "fiche_technique", "notice", "procedure_sav", "note_interne"],
@@ -537,12 +641,50 @@ def vue_documentation(profil: str, tools: list[str]) -> None:
 
 # --- assemblage ------------------------------------------------------------------------
 
+def vue_documentation(profil: str, tools: list[str]) -> None:
+    """Les quatre briques documentaires derrière une sous-navigation.
+
+    Une barre principale à sept entrées deviendrait illisible ; regrouper ce qui relève du
+    même geste métier — se documenter — la ramène à quatre. Le découpage rend aussi visible
+    que les briques du RAG s'utilisent séparément : répondre, chercher, ouvrir, inventorier.
+    """
+    modes = [
+        ("Réponse rédigée", "answer_question", vue_question),
+        ("Recherche brute", "search_docs", vue_recherche),
+        ("Ouvrir un document", "get_document", vue_document),
+        ("Inventaire", "list_sources", vue_inventaire),
+    ]
+    disponibles = [(libelle, vue) for libelle, tool, vue in modes if tool in tools]
+    if not disponibles:
+        afficher_vide(
+            "Aucune fonction documentaire accordée",
+            "Votre profil n'a de droit sur aucun tool du corpus.",
+        )
+        return
+
+    choix = st.radio(
+        "Mode de consultation",
+        [libelle for libelle, _ in disponibles],
+        horizontal=True,
+        key="mode_doc",
+        label_visibility="collapsed",
+    )
+    dict(disponibles)[choix](profil, tools)
+
+
+# Quatre entrées principales : la navigation reste sous le seuil au-delà duquel elle cesse
+# d'être lisible d'un coup d'œil, et chaque entrée correspond à un geste métier entier.
+# Une entrée s'affiche dès qu'un seul de ses outils est accordé — le profil `dev`, privé
+# de réponse rédigée, garde ainsi la recherche brute et la lecture de documents.
 VUES = [
-    ("Fiche produit", "check_stock", vue_produit),
-    ("Question", "answer_question", vue_question),
-    ("Données", "ask_database", vue_donnees),
-    ("Commande", "order_status", vue_commande),
-    ("Documentation", "list_sources", vue_documentation),
+    ("Produit", ["check_stock"], vue_produit),
+    (
+        "Documentation",
+        ["answer_question", "search_docs", "get_document", "list_sources"],
+        vue_documentation,
+    ),
+    ("Données", ["ask_database", "get_schema"], vue_donnees),
+    ("Commandes", ["order_status"], vue_commande),
 ]
 
 with st.sidebar:
@@ -581,7 +723,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-vues_actives = [(nom, vue) for nom, tool, vue in VUES if tool in tools]
+vues_actives = [
+    (nom, vue)
+    for nom, tools_requis, vue in VUES
+    if any(tool in tools for tool in tools_requis)
+]
 if not vues_actives:
     afficher_vide(
         "Aucune fonctionnalité accessible",
