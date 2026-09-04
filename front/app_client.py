@@ -280,38 +280,80 @@ STYLE = """
   }
   [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; box-shadow: var(--ombre-1); }
 
-  /* Barre latérale : surface distincte du contenu, sans trait de séparation dur. */
+  /* Barre latérale sombre : elle cesse d'être une colonne de page pour devenir un châssis
+     d'application. L'inversion suffit à séparer « où je suis » de « ce que je consulte »,
+     sans le trait de séparation qu'il fallait sinon. */
   [data-testid="stSidebar"] {
-    background: #fff; border-right: 1px solid var(--bord); box-shadow: var(--ombre-1);
+    background: linear-gradient(185deg, #0D1526 0%, #16223C 55%, #1A2745 100%);
+    border-right: none;
   }
-  /* Navigation verticale : des entrées de menu, pas des boutons d'action. La pastille
-     colorée marque la sélection sans compter sur la seule couleur du texte. */
+  [data-testid="stSidebar"] * { color: #E9EEF9; }
+  [data-testid="stSidebar"] h3 { color: #fff; font-size: 1.02rem; letter-spacing: -.01em; }
+  /* #A9B6D3 sur #16223C : 6.4:1, au-delà des 4.5:1 exigés pour du texte secondaire. */
+  [data-testid="stSidebar"] .stCaption,
+  [data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #A9B6D3 !important; }
+  [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.13); }
+  [data-testid="stSidebar"] [data-baseweb="select"] > div {
+    background: rgba(255,255,255,.07) !important;
+    border-color: rgba(255,255,255,.16) !important;
+  }
+  [data-testid="stSidebar"] [data-testid="stExpander"] details {
+    background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.13) !important;
+    box-shadow: none;
+  }
+  [data-testid="stSidebar"] .etiquette.gris {
+    background: rgba(255,255,255,.09); color: #D8E1F5; border-color: rgba(255,255,255,.14);
+  }
+
+  /* Navigation verticale : des entrées de menu, pas des boutons d'action. Chaque thème
+     porte sa couleur — en pastille quand il dort, en liseré quand il est ouvert. La
+     sélection ne repose donc jamais sur la seule couleur. */
   [data-testid="stSidebar"] .stButton > button {
-    justify-content: flex-start; text-align: left; border: 1px solid transparent;
-    background: transparent; color: var(--encre); font-weight: 600;
-    padding: .45rem .7rem; min-height: 2.5rem; border-radius: 10px; box-shadow: none;
+    display: flex; align-items: center; justify-content: flex-start; text-align: left;
+    border: 1px solid transparent; background: transparent; color: #C9D4EA;
+    font-weight: 600; padding: .45rem .7rem; min-height: 2.5rem;
+    border-radius: 10px; box-shadow: none;
+  }
+  [data-testid="stSidebar"] .stButton > button::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none;
+    margin-right: .6rem; background: rgba(255,255,255,.3);
+    transition: transform var(--transition);
   }
   [data-testid="stSidebar"] .stButton > button:hover {
-    background: var(--fond-doux); transform: none;
+    background: rgba(255,255,255,.07); color: #fff; transform: none;
   }
   [data-testid="stSidebar"] .stButton > button[kind="primary"] {
-    background: var(--accent-voile); color: var(--accent-fonce); font-weight: 700;
-    border-color: #DBE6FF; box-shadow: inset 3px 0 0 var(--accent);
+    color: #fff; font-weight: 700; border-color: transparent;
   }
-  /* Les sous-entrées vivent dans une colonne indentée : plus discrètes que leur thème. */
+  [data-testid="stSidebar"] .stButton > button[kind="primary"]::before { transform: scale(1.25); }
+
+  /* Les sous-entrées vivent dans une colonne indentée : plus discrètes que leur thème, et
+     marquées d'un trait plutôt que d'une pastille pour qu'on ne les confonde pas. */
   [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button {
     font-size: .86rem; font-weight: 500; min-height: 2.15rem; padding: .32rem .6rem;
+    color: #A9B6D3;
+  }
+  [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button::before {
+    width: 3px; height: 14px; border-radius: 2px; background: rgba(255,255,255,.18);
+    margin-right: .55rem;
   }
   [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button[kind="primary"] {
-    background: transparent; box-shadow: inset 2px 0 0 var(--accent); border-color: transparent;
+    background: rgba(255,255,255,.08); color: #fff; font-weight: 600;
   }
+  [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button[kind="primary"]::before {
+    transform: none;
+  }
+
   .groupe-acces {
-    font-size: .8rem; color: var(--encre-douce); line-height: 1.5;
-    display: flex; justify-content: space-between; gap: .5rem;
-    padding: .3rem 0; border-bottom: 1px solid var(--bord);
+    font-size: .8rem; line-height: 1.5;
+    display: flex; align-items: center; gap: .55rem;
+    padding: .32rem 0; border-bottom: 1px solid rgba(255,255,255,.09);
   }
+  .groupe-acces .pastille { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .groupe-acces .nom { color: #C9D4EA; }
   .groupe-acces .compte {
-    font-family: 'JetBrains Mono', monospace; color: var(--encre); font-weight: 600;
+    margin-left: auto; font-family: 'JetBrains Mono', monospace;
+    color: #fff; font-weight: 600;
   }
   code, pre, .stCode { font-family: 'JetBrains Mono', monospace !important; }
   [data-testid="stCode"] { border-radius: 10px; overflow: hidden; }
@@ -763,10 +805,22 @@ def vue_inventaire(profil: str, tools: list[str]) -> None:
 #
 # Un écran apparaît dès qu'un seul de ses tools est accordé, et un thème dès qu'un seul de
 # ses écrans apparaît : la barre reflète le profil sans jamais offrir une entrée morte.
+# Chaque thème porte une couleur, tenue d'un bout à l'autre : pastille dans le menu, liseré
+# de l'entrée ouverte, point du panneau d'accès. Le repère devient spatial autant que
+# textuel — on retrouve « Données » à sa teinte avant d'avoir lu le mot.
+# Le `slug` sert de clé de widget et de sélecteur CSS : un identifiant sans accent ni
+# espace, que la couleur suit sans dépendre du libellé affiché.
 NAVIGATION = [
-    ("Produit", [("Fiche produit", ["check_stock", "ask_database"], vue_produit)]),
+    (
+        "Produit",
+        "produit",
+        "#F59E0B",
+        [("Fiche produit", ["check_stock", "ask_database"], vue_produit)],
+    ),
     (
         "Documentation",
+        "documentation",
+        "#3B82F6",
         [
             ("Poser une question", ["answer_question"], vue_question),
             ("Rechercher un extrait", ["search_docs"], vue_recherche),
@@ -776,23 +830,52 @@ NAVIGATION = [
     ),
     (
         "Données",
+        "donnees",
+        "#8B5CF6",
         [
             ("Interroger la base", ["ask_database"], vue_donnees),
             ("Périmètre accessible", ["get_schema"], vue_schema),
         ],
     ),
-    ("Commandes", [("Suivi de commande", ["order_status"], vue_commande)]),
+    (
+        "Commandes",
+        "commandes",
+        "#10B981",
+        [("Suivi de commande", ["order_status"], vue_commande)],
+    ),
 ]
 
 
-def navigation_disponible(tools: list[str]) -> list[tuple[str, list[tuple]]]:
+def style_themes() -> str:
+    """Les règles de couleur, dérivées de `NAVIGATION` plutôt que recopiées à côté.
+
+    Streamlit appose sur chaque widget une classe `st-key-<clé>` : c'est ce qui permet de
+    colorer une entrée de menu précise sans y toucher depuis Python. Si cette classe venait
+    à disparaître d'une version, le menu resterait fonctionnel, en gris — pas cassé.
+    """
+    regles = []
+    for _, slug, couleur, _ in NAVIGATION:
+        regles.append(
+            f".st-key-nav_{slug} button::before {{ background: {couleur}; }}\n"
+            f'.st-key-nav_{slug} button[kind="primary"] {{\n'
+            f"  background: linear-gradient(90deg, {couleur}2E 0%, rgba(255,255,255,.03) 100%);\n"
+            f"  box-shadow: inset 3px 0 0 {couleur};\n"
+            f"}}\n"
+            # Les clés d'écran sont suffixées par leur rang : sélecteur sur le préfixe.
+            f'[class*="st-key-ecran_{slug}_"] button[kind="primary"]::before '
+            f"{{ background: {couleur}; }}"
+        )
+    return "<style>\n" + "\n".join(regles) + "\n</style>"
+
+
+def navigation_disponible(tools: list[str]) -> list[tuple[str, str, str, list[tuple]]]:
     themes = []
-    for theme, ecrans in NAVIGATION:
+    for theme, slug, couleur, ecrans in NAVIGATION:
         accessibles = [
             (nom, vue) for nom, requis, vue in ecrans if any(t in tools for t in requis)
         ]
         if accessibles:
-            themes.append((theme, accessibles))
+            themes.append((theme, slug, couleur, accessibles))
     return themes
 
 
@@ -817,12 +900,13 @@ with st.sidebar:
     themes = navigation_disponible(tools)
     vue_courante = None
     if themes:
+        st.markdown(style_themes(), unsafe_allow_html=True)
         st.divider()
-        theme_actif = _selection("_theme", [nom for nom, _ in themes])
-        for nom_theme, ecrans in themes:
+        theme_actif = _selection("_theme", [nom for nom, _, _, _ in themes])
+        for nom_theme, slug, _, ecrans in themes:
             if st.button(
                 nom_theme,
-                key=f"nav_{nom_theme}",
+                key=f"nav_{slug}",
                 use_container_width=True,
                 type="primary" if nom_theme == theme_actif else "secondary",
             ):
@@ -838,10 +922,10 @@ with st.sidebar:
                 _, colonne = st.columns([1, 11])
                 with colonne:
                     ecran_actif = _selection("_ecran", [nom for nom, _ in ecrans])
-                    for nom_ecran, vue in ecrans:
+                    for rang, (nom_ecran, vue) in enumerate(ecrans):
                         if st.button(
                             nom_ecran,
-                            key=f"ecran_{nom_theme}_{nom_ecran}",
+                            key=f"ecran_{slug}_{rang}",
                             use_container_width=True,
                             type="primary" if nom_ecran == ecran_actif else "secondary",
                         ):
@@ -852,19 +936,21 @@ with st.sidebar:
                 vue_courante = ecrans[0][1]
 
     st.divider()
-    # Les huit noms techniques alignés en vrac ne renseignaient personne. Le décompte par
-    # thème dit la même chose en une ligne ; le détail reste accessible d'un clic pour qui
-    # doit vérifier un droit précis.
-    st.markdown("**Accès accordés**")
-    for theme, ecrans in NAVIGATION:
-        requis = {t for _, tools_requis, _ in ecrans for t in tools_requis}
-        accordes = requis & set(tools)
+    # On compte des écrans, pas des tools : `ask_database` sert deux écrans (les conditions
+    # d'une fiche produit et l'interrogation libre), et le compter dans les deux thèmes
+    # faisait un total de 9 pour 8 tools accordés. Les deux unités sont justes mais ne
+    # s'additionnent pas — les mélanger dans un même panneau donnait un décompte faux.
+    st.markdown("**Écrans accessibles**")
+    for theme, _, couleur, ecrans in NAVIGATION:
+        ouverts = sum(1 for _, requis, _ in ecrans if any(t in tools for t in requis))
         st.markdown(
-            f"<div class='groupe-acces'><span>{theme}</span>"
-            f"<span class='compte'>{len(accordes)}/{len(requis)}</span></div>",
+            f"<div class='groupe-acces'>"
+            f"<span class='pastille' style='background:{couleur}'></span>"
+            f"<span class='nom'>{theme}</span>"
+            f"<span class='compte'>{ouverts}/{len(ecrans)}</span></div>",
             unsafe_allow_html=True,
         )
-    with st.expander("Détail des tools"):
+    with st.expander(f"Tools accordés par le serveur ({len(tools)}/8)"):
         st.markdown(
             " ".join(f"<span class='etiquette gris'>{t}</span>" for t in tools),
             unsafe_allow_html=True,
