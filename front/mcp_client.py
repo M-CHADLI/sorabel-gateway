@@ -91,8 +91,13 @@ class _SessionPersistante:
         resultat = await self._session.call_tool(tool, arguments)
         bloc = resultat.content[0] if resultat.content else None
         if bloc is None or not hasattr(bloc, "text"):
-            return {"erreur": "réponse MCP sans contenu textuel"}
-        return json.loads(bloc.text)
+            return {"statut": "erreur", "message": "réponse MCP sans contenu textuel"}
+        try:
+            return json.loads(bloc.text)
+        except json.JSONDecodeError:
+            # Une exception levée dans un tool remonte en texte brut, pas en JSON : on la
+            # présente comme un statut d'erreur exploitable plutôt que de casser l'appelant.
+            return {"statut": "erreur", "message": bloc.text}
 
     def outils(self) -> list[str]:
         return list(self._outils)
