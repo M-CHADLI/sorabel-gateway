@@ -33,9 +33,22 @@ class QuestionSensible(Exception):
     """Levée avant tout appel LLM : la question porte sur une colonne interdite au profil."""
 
 
+TABLES_A_COLONNES_SENSIBLES = ("produits", "ventes")
+
+
+def _profil_restreint_sur_le_sensible(perimetre) -> bool:
+    """Vrai si le profil se voit interdire au moins une colonne sensible.
+
+    Le lexique (marge, prix d'achat…) ne vaut refus que pour ces profils-là : `commercial`
+    et `admin` ont légitimement accès aux marges, leur opposer le garde-fou lexical les
+    priverait d'une donnée que la matrice leur accorde.
+    """
+    return any(perimetre.colonnes_interdites(table) for table in TABLES_A_COLONNES_SENSIBLES)
+
+
 def generer(question: str, perimetre) -> str | None:
     """`None` si la question ne se traduit pas en SQL sur ce schéma (hors_schema)."""
-    if question_sensible(question):
+    if _profil_restreint_sur_le_sensible(perimetre) and question_sensible(question):
         raise QuestionSensible(question)
 
     schema = schema_commente(perimetre)

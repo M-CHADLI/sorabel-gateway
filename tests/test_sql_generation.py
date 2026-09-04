@@ -6,10 +6,26 @@ import sorabel_sql.generation as generation
 
 
 class _PerimetreFactice:
+    """Profil sans restriction de colonne (commercial, admin) : les marges lui sont dues."""
+
     def tables_autorisees(self):
         return frozenset({"produits", "stocks", "clients", "commandes", "ventes"})
 
     def colonnes_interdites(self, table):
+        return frozenset()
+
+
+class _PerimetreRestreint:
+    """Profil soumis à E5 (support, dev) : les colonnes sensibles lui sont interdites."""
+
+    def tables_autorisees(self):
+        return frozenset({"produits", "stocks", "clients", "commandes", "ventes"})
+
+    def colonnes_interdites(self, table):
+        if table == "produits":
+            return frozenset({"prix_achat_ht", "marge_pct"})
+        if table == "ventes":
+            return frozenset({"marge_ht"})
         return frozenset()
 
 
@@ -24,9 +40,19 @@ def test_question_sensible_leve_avant_tout_appel_llm(monkeypatch):
     monkeypatch.setattr(generation, "completer", _completer_espion)
 
     with pytest.raises(generation.QuestionSensible):
-        generation.generer("quelle est la marge sur REF-1024 ?", _PerimetreFactice())
+        generation.generer("quelle est la marge sur REF-1024 ?", _PerimetreRestreint())
 
     assert not appele
+
+
+def test_question_sensible_ne_leve_pas_pour_un_profil_sans_colonne_interdite(monkeypatch):
+    """Le lexique ne vaut refus que pour les profils réellement restreints : opposer le
+    garde-fou à `commercial`/`admin` les priverait d'une donnée que la matrice leur accorde."""
+    monkeypatch.setattr(generation, "completer", lambda messages: "SELECT marge_pct FROM produits")
+
+    sql = generation.generer("quelle est la marge sur REF-1024 ?", _PerimetreFactice())
+
+    assert sql == "SELECT marge_pct FROM produits"
 
 
 def test_traduit_une_question_en_sql(monkeypatch):

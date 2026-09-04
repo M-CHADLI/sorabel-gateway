@@ -9,20 +9,34 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+# Streamlit exécute le script utilisateur dans un thread secondaire. Sur Windows, un
+# event loop asyncio créé hors du thread principal peut hériter d'une politique
+# SelectorEventLoop (posée par une dépendance tierce, ex. Tornado) qui ne sait pas créer
+# de sous-processus (`asyncio.subprocess` requiert ProactorEventLoop sous Windows) — le
+# lancement de `python -m mcp_server.serveur` échoue alors silencieusement côté client,
+# qui voit juste la connexion stdio se refermer aussitôt.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 RACINE = Path(__file__).resolve().parent.parent
 
 
 def _parametres(profil: str) -> StdioServerParameters:
+    # On hérite de l'environnement au lieu de le remplacer : un env réduit au seul
+    # SORABEL_PROFIL prive le sous-processus de SYSTEMROOT/PATH, et Python ne peut alors
+    # plus initialiser Winsock sous Windows (`OSError: [WinError 10106]` à l'import de
+    # `_overlapped`) — le serveur meurt avant d'avoir répondu au handshake MCP.
     return StdioServerParameters(
         command=sys.executable,
         args=["-m", "mcp_server.serveur"],
-        env={"SORABEL_PROFIL": profil},
+        env={**os.environ, "SORABEL_PROFIL": profil},
         cwd=str(RACINE),
     )
 

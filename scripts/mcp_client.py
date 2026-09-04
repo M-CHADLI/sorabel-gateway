@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -31,7 +32,9 @@ async def demo(profil: str) -> None:
     parametres = StdioServerParameters(
         command=sys.executable,
         args=["-m", "mcp_server.serveur"],
-        env={"SORABEL_PROFIL": profil},
+        # Hériter de l'environnement, ne pas le remplacer : sans SYSTEMROOT/PATH, le
+        # sous-processus ne peut pas initialiser Winsock sous Windows (WinError 10106).
+        env={**os.environ, "SORABEL_PROFIL": profil},
         cwd=str(RACINE),
     )
     async with stdio_client(parametres) as (lecture, ecriture):

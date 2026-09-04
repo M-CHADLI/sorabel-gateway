@@ -23,8 +23,9 @@ dependencies = [
     "openai>=2.0",
     "python-dotenv>=1.2",
 
-    # MCP
-    "mcp>=0.1",
+    # MCP — borné à la v1 : la v2 renomme FastMCP en MCPServer et change les APIs
+    # utilisées par mcp_server/ (migration non faite).
+    "mcp>=1.20,<2",
 
     # Frontend
     "streamlit>=1.30",
