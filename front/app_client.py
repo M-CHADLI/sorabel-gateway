@@ -42,6 +42,26 @@ PROFILS = {
 # format attendu, et le premier essai d'un nouvel utilisateur échoue le plus souvent dessus.
 REFERENCES_EXEMPLE = ["REF-8842", "REF-1024", "REF-5719", "REF-3764"]
 
+
+def appliquer_exemple(cle_champ: str) -> None:
+    """Reporte dans le champ la valeur choisie au run précédent.
+
+    Streamlit interdit d'écrire dans `session_state[clé]` une fois le widget de même clé
+    créé : un bouton d'exemple, rendu après le champ, ne peut donc pas le remplir
+    directement. Il dépose sa valeur dans une clé tampon, transférée ici avant que le
+    widget n'existe.
+    """
+    tampon = f"_attente_{cle_champ}"
+    if tampon in st.session_state:
+        st.session_state[cle_champ] = st.session_state.pop(tampon)
+
+
+def proposer_exemple(cle_champ: str, valeur: str, cle_bouton: str, colonne=None) -> None:
+    cible = colonne if colonne is not None else st
+    if cible.button(valeur, key=cle_bouton, use_container_width=True):
+        st.session_state[f"_attente_{cle_champ}"] = valeur
+        st.rerun()
+
 MOTIF_REFERENCE = re.compile(r"REF-\d{4}", re.IGNORECASE)
 
 # Un refus n'est pas une panne : chaque statut a son registre et son conseil de reprise,
@@ -292,6 +312,7 @@ def vue_produit(profil: str, tools: list[str]) -> None:
         unsafe_allow_html=True,
     )
 
+    appliquer_exemple("ref_produit")
     champ, action = st.columns([4, 1])
     with champ:
         saisie = st.text_input(
@@ -303,9 +324,7 @@ def vue_produit(profil: str, tools: list[str]) -> None:
 
     st.caption("Références du catalogue, pour essayer :")
     for exemple, colonne in zip(REFERENCES_EXEMPLE, st.columns(len(REFERENCES_EXEMPLE) + 3)):
-        if colonne.button(exemple, key=f"ex_{exemple}", use_container_width=True):
-            st.session_state["ref_produit"] = exemple
-            st.rerun()
+        proposer_exemple("ref_produit", exemple, f"ex_{exemple}", colonne)
 
     reference = saisie.strip().upper()
     if not lancer or not reference:
@@ -398,16 +417,15 @@ def vue_question(profil: str, tools: list[str]) -> None:
         "</div></div>",
         unsafe_allow_html=True,
     )
+    appliquer_exemple("question_doc")
     question = st.text_input(
         "Votre question",
         placeholder="Quel disjoncteur pour un départ moteur en triphasé ?",
         key="question_doc",
     )
     st.caption("Exemples couverts par le corpus :")
-    for exemple in QUESTIONS_EXEMPLE:
-        if st.button(exemple, key=f"q_{hash(exemple)}", use_container_width=True):
-            st.session_state["question_doc"] = exemple
-            st.rerun()
+    for indice, exemple in enumerate(QUESTIONS_EXEMPLE):
+        proposer_exemple("question_doc", exemple, f"q_{indice}")
 
     if st.button("Rechercher", key="btn_question", type="primary") and question:
         with st.spinner("Analyse du corpus documentaire — une dizaine de secondes…"):
