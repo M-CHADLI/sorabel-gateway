@@ -301,9 +301,16 @@ STYLE = """
     background: #FFFFFF !important; border-color: #FFFFFF !important;
     box-shadow: 0 1px 3px rgba(0,0,0,.25);
   }
-  [data-testid="stSidebar"] [data-baseweb="select"] div,
-  [data-testid="stSidebar"] [data-baseweb="select"] span {
-    color: var(--encre) !important; font-weight: 600;
+  /* Balayage de tout le widget plutôt que du seul sous-arbre baseweb : la valeur choisie
+     est rendue dans un nœud dont la position varie d'une version à l'autre, et viser juste
+     de l'extérieur revient à parier sur une structure interne. */
+  [data-testid="stSidebar"] [data-testid="stSelectbox"] * {
+    color: var(--encre) !important;
+  }
+  /* … sauf l'intitulé du champ, qui reste sur le fond sombre. */
+  [data-testid="stSidebar"] [data-testid="stSelectbox"] label,
+  [data-testid="stSidebar"] [data-testid="stSelectbox"] label * {
+    color: #E9EEF9 !important;
   }
   [data-testid="stSidebar"] [data-baseweb="select"] svg { fill: var(--encre-douce) !important; }
   [data-testid="stSidebar"] [data-testid="stExpander"] details {
@@ -328,12 +335,14 @@ STYLE = """
     margin-right: .6rem; background: rgba(255,255,255,.3);
     transition: transform var(--transition);
   }
-  /* Le libellé est centré par défaut dans un bouton Streamlit : dans un menu, l'œil
-     descend une colonne de débuts de mots, pas une colonne de milieux. */
-  [data-testid="stSidebar"] .stButton > button > div,
-  [data-testid="stSidebar"] .stButton > button p {
-    text-align: left !important; width: 100%;
+  /* Le libellé est centré par défaut dans un bouton Streamlit : dans un menu, l'œil descend
+     une colonne de débuts de mots, pas une colonne de milieux. Le centrage vient d'un
+     conteneur intermédiaire en flex — `text-align` seul n'y peut rien, il faut d'abord le
+     repasser en bloc. */
+  [data-testid="stSidebar"] .stButton > button * {
+    text-align: left !important; justify-content: flex-start !important;
   }
+  [data-testid="stSidebar"] .stButton > button > div { width: 100% !important; }
   [data-testid="stSidebar"] .stButton > button:hover {
     background: rgba(255,255,255,.07); color: #fff; transform: none;
   }
