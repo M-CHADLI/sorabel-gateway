@@ -293,14 +293,19 @@ STYLE = """
   [data-testid="stSidebar"] .stCaption,
   [data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #A9B6D3 !important; }
   [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.13); }
-  /* Le profil connecté conditionne tout l'écran : il doit se lire en pleine encre, et non
-     dans le gris de placeholder que baseweb applique par défaut sur fond sombre. */
+  /* Le sélecteur de profil reste une surface claire : baseweb peint son fond sur une couche
+     interne qu'on ne maîtrise pas de l'extérieur, et lui imposer du texte clair donnait du
+     blanc sur blanc. Clair sur fond sombre, c'est aussi le seul champ actif de la barre —
+     et le profil conditionne tout l'écran, il mérite de se voir. */
   [data-testid="stSidebar"] [data-baseweb="select"] > div {
-    background: rgba(255,255,255,.07) !important;
-    border-color: rgba(255,255,255,.16) !important;
+    background: #FFFFFF !important; border-color: #FFFFFF !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,.25);
   }
-  [data-testid="stSidebar"] [data-baseweb="select"] div { color: #FFFFFF !important; }
-  [data-testid="stSidebar"] [data-baseweb="select"] svg { fill: #A9B6D3 !important; }
+  [data-testid="stSidebar"] [data-baseweb="select"] div,
+  [data-testid="stSidebar"] [data-baseweb="select"] span {
+    color: var(--encre) !important; font-weight: 600;
+  }
+  [data-testid="stSidebar"] [data-baseweb="select"] svg { fill: var(--encre-douce) !important; }
   [data-testid="stSidebar"] [data-testid="stExpander"] details {
     background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.13) !important;
     box-shadow: none;
