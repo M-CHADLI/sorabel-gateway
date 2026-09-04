@@ -121,7 +121,7 @@ STYLE = """
   html, body, [class*="css"], .stMarkdown, button, input, select, textarea {
     font-family: 'Fira Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
-  .block-container { padding-top: 2rem; max-width: 1200px; }
+  .block-container { padding-top: 3rem; max-width: 1200px; }
 
   /* Contraste : 4.5:1 minimum sur tout le texte courant. */
   .stMarkdown, .stMarkdown p, label, .stCaption { color: var(--encre); }
@@ -132,7 +132,12 @@ STYLE = """
     border-bottom: 1px solid var(--bord); padding-bottom: .8rem; margin-bottom: 1.1rem;
     color: var(--encre);
   }
-  .bandeau .titre { font-size: 1.4rem; font-weight: 650; letter-spacing: -.02em; }
+  /* `line-height` explicite : à 1.4rem, les jambages de « p » et « j » et les accents
+     capitaux débordent de la boîte par défaut et se font rogner par le flex. */
+  .bandeau .titre {
+    font-size: 1.4rem; font-weight: 650; letter-spacing: -.02em;
+    line-height: 1.45; padding: .1rem 0;
+  }
   .bandeau .profil {
     margin-left: auto; font-size: .78rem; color: var(--encre-douce);
     font-family: 'Fira Code', monospace; background: var(--fond-doux);
@@ -214,6 +219,32 @@ STYLE = """
   }
   .stButton > button { cursor: pointer; transition: background var(--transition), border-color var(--transition); }
   .stTabs [data-baseweb="tab"] { cursor: pointer; }
+
+  /* Navigation verticale : des entrées de menu, pas des boutons d'action. Le liseré à
+     gauche marque la sélection sans compter sur la seule couleur du texte. */
+  [data-testid="stSidebar"] .stButton > button {
+    justify-content: flex-start; text-align: left; border: 1px solid transparent;
+    background: transparent; color: var(--encre); font-weight: 500;
+    padding: .42rem .6rem; min-height: 2.4rem; border-radius: 6px;
+  }
+  [data-testid="stSidebar"] .stButton > button:hover { background: var(--fond-doux); }
+  [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: var(--fond-doux); color: var(--accent); font-weight: 650;
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  /* Les sous-entrées vivent dans une colonne indentée : plus discrètes que leur thème. */
+  [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button {
+    font-size: .87rem; min-height: 2.1rem; padding: .3rem .55rem;
+  }
+  [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] .stButton > button[kind="primary"] {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .groupe-acces {
+    font-size: .8rem; color: var(--encre-douce); line-height: 1.5;
+    display: flex; justify-content: space-between; gap: .5rem;
+    padding: .18rem 0; border-bottom: 1px solid var(--bord);
+  }
+  .groupe-acces .compte { font-family: 'Fira Code', monospace; color: var(--encre); }
   code, pre, .stCode { font-family: 'Fira Code', monospace !important; }
 
   @media (prefers-reduced-motion: reduce) {
@@ -438,10 +469,12 @@ def vue_question(profil: str, tools: list[str]) -> None:
 
 
 def vue_donnees(profil: str, tools: list[str]) -> None:
-    st.subheader("Interroger les données")
-    st.caption(
-        "Produits, stocks, clients, commandes et ventes, en langage naturel. "
-        "Consultation seule : la requête produite reste toujours consultable."
+    st.markdown(
+        "<div class='panneau'><div class='intitule'>Interroger les données</div>"
+        "<div class='aide'>Produits, stocks, clients, commandes et ventes, en langage "
+        "naturel. Consultation seule : la requête produite reste toujours consultable."
+        "</div></div>",
+        unsafe_allow_html=True,
     )
     question = st.text_input(
         "Votre question", placeholder="Combien de commandes en avril ?", key="question_sql"
@@ -457,13 +490,25 @@ def vue_donnees(profil: str, tools: list[str]) -> None:
             afficher_refus(resultat, "reprise_donnees")
         afficher_sql(resultat)
 
-    if "get_schema" in tools:
-        with st.expander("Données consultables par votre profil"):
-            schema = appeler(profil, "get_schema", {})
-            if schema.get("statut") == "ok":
-                st.code(schema["schema"], language="sql")
-            else:
-                afficher_refus(schema)
+
+def vue_schema(profil: str, tools: list[str]) -> None:
+    """`get_schema` : le schéma déjà filtré par la matrice, donc lisible comme un périmètre.
+
+    Ce que ce profil n'a pas le droit de lire n'y figure pas — c'est la démonstration la plus
+    directe d'E5 côté utilisateur : il constate son périmètre au lieu de le deviner aux refus.
+    """
+    st.markdown(
+        "<div class='panneau'><div class='intitule'>Données consultables</div>"
+        "<div class='aide'>Tables et colonnes que votre profil peut interroger. Les colonnes "
+        "hors périmètre sont absentes du schéma, pas seulement refusées à l'exécution."
+        "</div></div>",
+        unsafe_allow_html=True,
+    )
+    schema = appeler(profil, "get_schema", {})
+    if schema.get("statut") == "ok":
+        st.code(schema["schema"], language="sql")
+    else:
+        afficher_refus(schema, "reprise_schema")
 
 
 def vue_commande(profil: str, tools: list[str]) -> None:
@@ -641,51 +686,52 @@ def vue_inventaire(profil: str, tools: list[str]) -> None:
 
 # --- assemblage ------------------------------------------------------------------------
 
-def vue_documentation(profil: str, tools: list[str]) -> None:
-    """Les quatre briques documentaires derrière une sous-navigation.
-
-    Une barre principale à sept entrées deviendrait illisible ; regrouper ce qui relève du
-    même geste métier — se documenter — la ramène à quatre. Le découpage rend aussi visible
-    que les briques du RAG s'utilisent séparément : répondre, chercher, ouvrir, inventorier.
-    """
-    modes = [
-        ("Réponse rédigée", "answer_question", vue_question),
-        ("Recherche brute", "search_docs", vue_recherche),
-        ("Ouvrir un document", "get_document", vue_document),
-        ("Inventaire", "list_sources", vue_inventaire),
-    ]
-    disponibles = [(libelle, vue) for libelle, tool, vue in modes if tool in tools]
-    if not disponibles:
-        afficher_vide(
-            "Aucune fonction documentaire accordée",
-            "Votre profil n'a de droit sur aucun tool du corpus.",
-        )
-        return
-
-    choix = st.radio(
-        "Mode de consultation",
-        [libelle for libelle, _ in disponibles],
-        horizontal=True,
-        key="mode_doc",
-        label_visibility="collapsed",
-    )
-    dict(disponibles)[choix](profil, tools)
-
-
-# Quatre entrées principales : la navigation reste sous le seuil au-delà duquel elle cesse
-# d'être lisible d'un coup d'œil, et chaque entrée correspond à un geste métier entier.
-# Une entrée s'affiche dès qu'un seul de ses outils est accordé — le profil `dev`, privé
-# de réponse rédigée, garde ainsi la recherche brute et la lecture de documents.
-VUES = [
-    ("Produit", ["check_stock"], vue_produit),
+# Navigation à deux niveaux : quatre thèmes métier, chacun ouvrant ses écrans. Le catalogue
+# de tools n'est pas une organisation utilisable — « search_docs » ne dit rien à un
+# commercial, « Rechercher sans générer » si. Les huit tools restent tous atteignables, mais
+# rangés derrière le geste qui les motive, et non listés à plat.
+#
+# Un écran apparaît dès qu'un seul de ses tools est accordé, et un thème dès qu'un seul de
+# ses écrans apparaît : la barre reflète le profil sans jamais offrir une entrée morte.
+NAVIGATION = [
+    ("Produit", [("Fiche produit", ["check_stock", "ask_database"], vue_produit)]),
     (
         "Documentation",
-        ["answer_question", "search_docs", "get_document", "list_sources"],
-        vue_documentation,
+        [
+            ("Poser une question", ["answer_question"], vue_question),
+            ("Rechercher un extrait", ["search_docs"], vue_recherche),
+            ("Ouvrir un document", ["get_document"], vue_document),
+            ("Inventaire du corpus", ["list_sources"], vue_inventaire),
+        ],
     ),
-    ("Données", ["ask_database", "get_schema"], vue_donnees),
-    ("Commandes", ["order_status"], vue_commande),
+    (
+        "Données",
+        [
+            ("Interroger la base", ["ask_database"], vue_donnees),
+            ("Périmètre accessible", ["get_schema"], vue_schema),
+        ],
+    ),
+    ("Commandes", [("Suivi de commande", ["order_status"], vue_commande)]),
 ]
+
+
+def navigation_disponible(tools: list[str]) -> list[tuple[str, list[tuple]]]:
+    themes = []
+    for theme, ecrans in NAVIGATION:
+        accessibles = [
+            (nom, vue) for nom, requis, vue in ecrans if any(t in tools for t in requis)
+        ]
+        if accessibles:
+            themes.append((theme, accessibles))
+    return themes
+
+
+def _selection(cle: str, valeurs: list[str]) -> str:
+    """Maintient la sélection valide : un changement de profil peut la faire disparaître."""
+    if st.session_state.get(cle) not in valeurs:
+        st.session_state[cle] = valeurs[0]
+    return st.session_state[cle]
+
 
 with st.sidebar:
     st.markdown("### Sorabel Data Gateway")
@@ -698,15 +744,65 @@ with st.sidebar:
         st.session_state["_profil_charge"] = profil
     tools = st.session_state.get("_tools", [])
 
+    themes = navigation_disponible(tools)
+    vue_courante = None
+    if themes:
+        st.divider()
+        theme_actif = _selection("_theme", [nom for nom, _ in themes])
+        for nom_theme, ecrans in themes:
+            if st.button(
+                nom_theme,
+                key=f"nav_{nom_theme}",
+                use_container_width=True,
+                type="primary" if nom_theme == theme_actif else "secondary",
+            ):
+                # Les sous-entrées d'un thème situé plus haut sont déjà rendues à ce
+                # stade : sans relance, la barre afficherait deux thèmes ouverts.
+                st.session_state["_theme"] = nom_theme
+                st.session_state["_ecran"] = ecrans[0][0]
+                st.rerun()
+
+            # Un thème à écran unique n'a rien à déplier : afficher une sous-entrée qui
+            # répète son thème n'ajoute qu'un clic.
+            if nom_theme == theme_actif and len(ecrans) > 1:
+                _, colonne = st.columns([1, 11])
+                with colonne:
+                    ecran_actif = _selection("_ecran", [nom for nom, _ in ecrans])
+                    for nom_ecran, vue in ecrans:
+                        if st.button(
+                            nom_ecran,
+                            key=f"ecran_{nom_theme}_{nom_ecran}",
+                            use_container_width=True,
+                            type="primary" if nom_ecran == ecran_actif else "secondary",
+                        ):
+                            st.session_state["_ecran"] = nom_ecran
+                            ecran_actif = nom_ecran
+                    vue_courante = dict(ecrans)[ecran_actif]
+            elif nom_theme == theme_actif:
+                vue_courante = ecrans[0][1]
+
+    st.divider()
+    # Les huit noms techniques alignés en vrac ne renseignaient personne. Le décompte par
+    # thème dit la même chose en une ligne ; le détail reste accessible d'un clic pour qui
+    # doit vérifier un droit précis.
     st.markdown("**Accès accordés**")
-    st.markdown(
-        " ".join(f"<span class='etiquette gris'>{t}</span>" for t in tools),
-        unsafe_allow_html=True,
-    )
-    st.caption(
-        "Ce que ce profil ne peut pas appeler n'apparaît pas : la matrice d'accès est "
-        "appliquée par le serveur, cette page ne fait que la refléter."
-    )
+    for theme, ecrans in NAVIGATION:
+        requis = {t for _, tools_requis, _ in ecrans for t in tools_requis}
+        accordes = requis & set(tools)
+        st.markdown(
+            f"<div class='groupe-acces'><span>{theme}</span>"
+            f"<span class='compte'>{len(accordes)}/{len(requis)}</span></div>",
+            unsafe_allow_html=True,
+        )
+    with st.expander("Détail des tools"):
+        st.markdown(
+            " ".join(f"<span class='etiquette gris'>{t}</span>" for t in tools),
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "Ce que ce profil ne peut pas appeler n'apparaît pas : la matrice d'accès est "
+            "appliquée par le serveur, cette page ne fait que la refléter."
+        )
 
 libelle_profil, titre_poste = PROFILS[profil]
 st.markdown(
@@ -723,17 +819,10 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-vues_actives = [
-    (nom, vue)
-    for nom, tools_requis, vue in VUES
-    if any(tool in tools for tool in tools_requis)
-]
-if not vues_actives:
+if vue_courante is None:
     afficher_vide(
         "Aucune fonctionnalité accessible",
         "Ce profil n'a de droit sur aucun tool. Contactez l'exploitation.",
     )
 else:
-    for (nom, vue), onglet in zip(vues_actives, st.tabs([n for n, _ in vues_actives])):
-        with onglet:
-            vue(profil, tools)
+    vue_courante(profil, tools)
