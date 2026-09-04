@@ -293,10 +293,14 @@ STYLE = """
   [data-testid="stSidebar"] .stCaption,
   [data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #A9B6D3 !important; }
   [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.13); }
+  /* Le profil connecté conditionne tout l'écran : il doit se lire en pleine encre, et non
+     dans le gris de placeholder que baseweb applique par défaut sur fond sombre. */
   [data-testid="stSidebar"] [data-baseweb="select"] > div {
     background: rgba(255,255,255,.07) !important;
     border-color: rgba(255,255,255,.16) !important;
   }
+  [data-testid="stSidebar"] [data-baseweb="select"] div { color: #FFFFFF !important; }
+  [data-testid="stSidebar"] [data-baseweb="select"] svg { fill: #A9B6D3 !important; }
   [data-testid="stSidebar"] [data-testid="stExpander"] details {
     background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.13) !important;
     box-shadow: none;
@@ -318,6 +322,12 @@ STYLE = """
     content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none;
     margin-right: .6rem; background: rgba(255,255,255,.3);
     transition: transform var(--transition);
+  }
+  /* Le libellé est centré par défaut dans un bouton Streamlit : dans un menu, l'œil
+     descend une colonne de débuts de mots, pas une colonne de milieux. */
+  [data-testid="stSidebar"] .stButton > button > div,
+  [data-testid="stSidebar"] .stButton > button p {
+    text-align: left !important; width: 100%;
   }
   [data-testid="stSidebar"] .stButton > button:hover {
     background: rgba(255,255,255,.07); color: #fff; transform: none;
@@ -364,7 +374,47 @@ STYLE = """
   }
 </style>
 """
-st.markdown(STYLE, unsafe_allow_html=True)
+# Une couleur par thème de la navigation, tenue d'un bout à l'autre : pastille du menu,
+# liseré de l'entrée ouverte, point du panneau d'accès. Elles vivent ici, avant la feuille
+# de style, parce que les règles qui les portent en sont dérivées — la table `NAVIGATION`
+# plus bas les reprend, sans jamais redéfinir une teinte de son côté.
+COULEURS_THEME = {
+    "produit": "#F59E0B",
+    "documentation": "#3B82F6",
+    "donnees": "#8B5CF6",
+    "commandes": "#10B981",
+}
+
+
+def _regles_couleurs() -> str:
+    """Les règles de couleur, dérivées de `COULEURS_THEME` plutôt que recopiées à la main.
+
+    Streamlit appose sur chaque widget une classe `st-key-<clé>` : c'est ce qui permet de
+    colorer une entrée de menu précise sans y toucher depuis Python. Le préfixe
+    `[data-testid="stSidebar"]` n'est pas décoratif — sans lui, ces règles perdent en
+    spécificité contre les règles génériques du menu, qui reprennent la main et rendent
+    toutes les pastilles grises.
+
+    Si la classe `st-key-` disparaissait d'une version de Streamlit, le menu resterait
+    fonctionnel, en gris — pas cassé.
+    """
+    regles = []
+    for slug, couleur in COULEURS_THEME.items():
+        regles.append(
+            f'[data-testid="stSidebar"] .st-key-nav_{slug} button::before '
+            f"{{ background: {couleur}; }}\n"
+            f'[data-testid="stSidebar"] .st-key-nav_{slug} button[kind="primary"] {{\n'
+            f"  background: linear-gradient(90deg, {couleur}2E 0%, rgba(255,255,255,.03) 100%);\n"
+            f"  box-shadow: inset 3px 0 0 {couleur};\n"
+            f"}}\n"
+            # Les clés d'écran sont suffixées par leur rang : sélecteur sur le préfixe.
+            f'[data-testid="stSidebar"] [class*="st-key-ecran_{slug}_"] '
+            f'button[kind="primary"]::before {{ background: {couleur}; }}'
+        )
+    return "<style>\n" + "\n".join(regles) + "\n</style>"
+
+
+st.markdown(STYLE + _regles_couleurs(), unsafe_allow_html=True)
 
 
 # --- présentation ----------------------------------------------------------------------
@@ -805,22 +855,19 @@ def vue_inventaire(profil: str, tools: list[str]) -> None:
 #
 # Un écran apparaît dès qu'un seul de ses tools est accordé, et un thème dès qu'un seul de
 # ses écrans apparaît : la barre reflète le profil sans jamais offrir une entrée morte.
-# Chaque thème porte une couleur, tenue d'un bout à l'autre : pastille dans le menu, liseré
-# de l'entrée ouverte, point du panneau d'accès. Le repère devient spatial autant que
-# textuel — on retrouve « Données » à sa teinte avant d'avoir lu le mot.
 # Le `slug` sert de clé de widget et de sélecteur CSS : un identifiant sans accent ni
-# espace, que la couleur suit sans dépendre du libellé affiché.
+# espace, qui relie l'entrée à sa couleur dans `COULEURS_THEME` sans dépendre du libellé.
+# Le repère devient spatial autant que textuel — on retrouve « Données » à sa teinte avant
+# d'avoir lu le mot.
 NAVIGATION = [
     (
         "Produit",
         "produit",
-        "#F59E0B",
         [("Fiche produit", ["check_stock", "ask_database"], vue_produit)],
     ),
     (
         "Documentation",
         "documentation",
-        "#3B82F6",
         [
             ("Poser une question", ["answer_question"], vue_question),
             ("Rechercher un extrait", ["search_docs"], vue_recherche),
@@ -831,51 +878,23 @@ NAVIGATION = [
     (
         "Données",
         "donnees",
-        "#8B5CF6",
         [
             ("Interroger la base", ["ask_database"], vue_donnees),
             ("Périmètre accessible", ["get_schema"], vue_schema),
         ],
     ),
-    (
-        "Commandes",
-        "commandes",
-        "#10B981",
-        [("Suivi de commande", ["order_status"], vue_commande)],
-    ),
+    ("Commandes", "commandes", [("Suivi de commande", ["order_status"], vue_commande)]),
 ]
 
 
-def style_themes() -> str:
-    """Les règles de couleur, dérivées de `NAVIGATION` plutôt que recopiées à côté.
-
-    Streamlit appose sur chaque widget une classe `st-key-<clé>` : c'est ce qui permet de
-    colorer une entrée de menu précise sans y toucher depuis Python. Si cette classe venait
-    à disparaître d'une version, le menu resterait fonctionnel, en gris — pas cassé.
-    """
-    regles = []
-    for _, slug, couleur, _ in NAVIGATION:
-        regles.append(
-            f".st-key-nav_{slug} button::before {{ background: {couleur}; }}\n"
-            f'.st-key-nav_{slug} button[kind="primary"] {{\n'
-            f"  background: linear-gradient(90deg, {couleur}2E 0%, rgba(255,255,255,.03) 100%);\n"
-            f"  box-shadow: inset 3px 0 0 {couleur};\n"
-            f"}}\n"
-            # Les clés d'écran sont suffixées par leur rang : sélecteur sur le préfixe.
-            f'[class*="st-key-ecran_{slug}_"] button[kind="primary"]::before '
-            f"{{ background: {couleur}; }}"
-        )
-    return "<style>\n" + "\n".join(regles) + "\n</style>"
-
-
-def navigation_disponible(tools: list[str]) -> list[tuple[str, str, str, list[tuple]]]:
+def navigation_disponible(tools: list[str]) -> list[tuple[str, str, list[tuple]]]:
     themes = []
-    for theme, slug, couleur, ecrans in NAVIGATION:
+    for theme, slug, ecrans in NAVIGATION:
         accessibles = [
             (nom, vue) for nom, requis, vue in ecrans if any(t in tools for t in requis)
         ]
         if accessibles:
-            themes.append((theme, slug, couleur, accessibles))
+            themes.append((theme, slug, accessibles))
     return themes
 
 
@@ -900,10 +919,9 @@ with st.sidebar:
     themes = navigation_disponible(tools)
     vue_courante = None
     if themes:
-        st.markdown(style_themes(), unsafe_allow_html=True)
         st.divider()
-        theme_actif = _selection("_theme", [nom for nom, _, _, _ in themes])
-        for nom_theme, slug, _, ecrans in themes:
+        theme_actif = _selection("_theme", [nom for nom, _, _ in themes])
+        for nom_theme, slug, ecrans in themes:
             if st.button(
                 nom_theme,
                 key=f"nav_{slug}",
@@ -941,11 +959,11 @@ with st.sidebar:
     # faisait un total de 9 pour 8 tools accordés. Les deux unités sont justes mais ne
     # s'additionnent pas — les mélanger dans un même panneau donnait un décompte faux.
     st.markdown("**Écrans accessibles**")
-    for theme, _, couleur, ecrans in NAVIGATION:
+    for theme, slug, ecrans in NAVIGATION:
         ouverts = sum(1 for _, requis, _ in ecrans if any(t in tools for t in requis))
         st.markdown(
             f"<div class='groupe-acces'>"
-            f"<span class='pastille' style='background:{couleur}'></span>"
+            f"<span class='pastille' style='background:{COULEURS_THEME[slug]}'></span>"
             f"<span class='nom'>{theme}</span>"
             f"<span class='compte'>{ouverts}/{len(ecrans)}</span></div>",
             unsafe_allow_html=True,
