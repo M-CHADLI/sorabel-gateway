@@ -1,7 +1,9 @@
 """Peuple gouvernance.db avec la matrice d'accès exacte de docs/conception_mcp.md §2.
 
-Script d'administration : c'est le SEUL endroit du dépôt qui écrit dans gouvernance.db. La
-Gateway l'ouvre toujours en lecture seule à l'exécution — la matrice se modifie hors ligne.
+Script d'administration : c'est le SEUL endroit du dépôt qui écrit la matrice (profils,
+tools, collections, tables, colonnes interdites) dans gouvernance.db — elle se modifie hors
+ligne, la Gateway l'ouvre toujours en lecture seule à l'exécution. Les identités (quel
+profil pour quel sujet) s'écrivent à part, via `gouvernance.identites.DepotIdentitesSqlite`.
 """
 
 from __future__ import annotations

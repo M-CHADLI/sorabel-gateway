@@ -53,3 +53,28 @@ def test_profil_inexistant_est_refuse(depot):
     # La matrice est la référence : on n'attribue pas un profil qui n'existe pas.
     with pytest.raises(ValueError, match="profil inconnu"):
         depot.attribuer("sub-123", "directeur", source="demo")
+
+
+def test_profil_desactive_est_refuse(depot, tmp_path):
+    # `actif = 1` est déjà dans le filtre SQL d'attribuer ; ce test couvre ce chemin de
+    # sécurité pour qu'une régression future (ex. suppression du filtre) casse un test.
+    connexion = sqlite3.connect(tmp_path / "gouvernance.db")
+    try:
+        connexion.execute("UPDATE profils SET actif = 0 WHERE code = ?", ("commercial",))
+        connexion.commit()
+    finally:
+        connexion.close()
+
+    with pytest.raises(ValueError, match="profil inconnu ou désactivé"):
+        depot.attribuer("sub-123", "commercial", source="demo")
+
+
+def test_profil_de_sur_base_absente_leve_une_erreur_diagnostiquable(tmp_path):
+    # Un fichier absent est une erreur de configuration, pas un sujet inconnu : la
+    # confondre renverrait silencieusement `None` pour tout sujet, masquant une
+    # gouvernance cassée derrière un simple "profil non trouvé".
+    chemin_absent = tmp_path / "n-existe-pas" / "gouvernance.db"
+    depot_sans_base = DepotIdentitesSqlite(chemin_absent)
+
+    with pytest.raises(RuntimeError, match="scripts/seed_gouvernance.py"):
+        depot_sans_base.profil_de("sub-123")

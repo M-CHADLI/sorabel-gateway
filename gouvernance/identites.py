@@ -21,10 +21,24 @@ class DepotIdentitesSqlite:
     def _connexion(self, lecture_seule: bool = True) -> sqlite3.Connection:
         if lecture_seule:
             return sqlite3.connect(f"file:{self._chemin.as_posix()}?mode=ro", uri=True)
+        # Pas de busy_timeout ni de mode WAL ici : décision délibérée, pas un défaut
+        # subi. Cette implémentation SQLite ne sert jamais la production — Firestore y
+        # gère la concurrence — donc le coût de traiter les écritures concurrentes en
+        # développement/tests ne se justifie pas.
         return sqlite3.connect(self._chemin)
 
     def profil_de(self, sujet: str) -> str | None:
-        connexion = self._connexion()
+        try:
+            connexion = self._connexion()
+        except sqlite3.OperationalError as erreur:
+            # Un fichier absent est une erreur de configuration, pas un sujet inconnu :
+            # la confondre avec un sujet inconnu ferait échouer silencieusement toute
+            # la gouvernance (tout appelant recevrait "aucun profil" au lieu d'un
+            # diagnostic exploitable).
+            raise RuntimeError(
+                f"base d'identités introuvable : {self._chemin} "
+                "— exécuter scripts/seed_gouvernance.py pour la créer"
+            ) from erreur
         try:
             ligne = connexion.execute(
                 "SELECT profil FROM identites WHERE sujet = ?", (sujet,)
@@ -40,7 +54,7 @@ class DepotIdentitesSqlite:
                 "SELECT 1 FROM profils WHERE code = ? AND actif = 1", (profil,)
             ).fetchone()
             if not connu:
-                raise ValueError(f"profil inconnu : {profil!r}")
+                raise ValueError(f"profil inconnu ou désactivé : {profil!r}")
             # REPLACE plutôt qu'INSERT : changer de profil réécrit la ligne du sujet,
             # sinon `profil_de` deviendrait ambigu.
             connexion.execute(
