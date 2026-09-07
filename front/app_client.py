@@ -12,7 +12,8 @@ lire au caractère près (références, identifiants, SQL). Le verre dépoli est
 bandeau : l'appliquer derrière un tableau de chiffres coûterait en lisibilité ce qu'il
 rapporte en style.
 
-Tout passe par le serveur MCP (`front.mcp_client`) : la page n'applique aucune règle d'accès
+Tout passe par le serveur MCP (`front.passerelle`, pont HTTP derrière Identity-Aware Proxy) :
+la page n'applique aucune règle d'accès
 elle-même, elle reflète ce que la matrice autorise pour le profil connecté. Les garanties du
 brief s'y retrouvent — sources citées (E1), SQL exécuté ou rejeté toujours visible (E3),
 tools masqués hors périmètre (E4), refus traduits en message clair et jamais confondus avec
@@ -28,7 +29,8 @@ import re
 
 import streamlit as st
 
-from front.mcp_client import appeler, lister_tools
+from front.depot import depot_identites, tools_accordes
+from front.passerelle import appeler, assertion_iap, sujet_du_jeton
 
 st.set_page_config(page_title="Sorabel — Poste commercial", layout="wide")
 
@@ -39,6 +41,15 @@ PROFILS = {
     "support": ("Support client", "Poste support"),
     "admin": ("Exploitation", "Console d'exploitation"),
     "dev": ("Développeur", "Console d'intégration"),
+}
+
+# Décrit le profil, pas ses tools un par un : le libellé sert la page d'inscription, où un
+# visiteur choisit sans avoir encore vu le reste de l'application.
+DESCRIPTIONS_PROFIL = {
+    "admin": "accès complet aux 8 outils — recommandé pour un essai complet",
+    "commercial": "8 outils, marges et notes confidentielles accessibles",
+    "support": "8 outils, mais marges et prix d'achat hors périmètre",
+    "dev": "4 outils documentaires, ni génération ni interrogation de la base",
 }
 
 # Références réelles du catalogue, proposées en exemple : un champ vide n'apprend rien du
@@ -511,7 +522,7 @@ def afficher_tableau(resultat: dict, suggestion: str) -> None:
 # --- vues métier -----------------------------------------------------------------------
 
 
-def vue_produit(profil: str, tools: list[str]) -> None:
+def vue_produit(assertion: str | None, tools: frozenset[str]) -> None:
     st.markdown(
         "<div class='panneau'><div class='intitule'>Consulter une référence</div>"
         "<div class='aide'>Stock par entrepôt, conditions tarifaires et documentation "
@@ -550,7 +561,7 @@ def vue_produit(profil: str, tools: list[str]) -> None:
         with suivi.container():
             afficher_etapes(etapes, 0)
         st.markdown("#### Disponibilité")
-        stock = appeler(profil, "check_stock", {"ref": reference})
+        stock = appeler(assertion, "check_stock", {"ref": reference})
         if stock.get("statut") == "ok":
             colonnes, lignes = stock.get("colonnes", []), stock.get("lignes", [])
             if not lignes:
@@ -581,7 +592,7 @@ def vue_produit(profil: str, tools: list[str]) -> None:
             afficher_etapes(etapes, etapes.index("Conditions"))
         st.markdown("#### Conditions commerciales")
         conditions = appeler(
-            profil,
+            assertion,
             "ask_database",
             {"question": f"donne le nom, la catégorie et le prix de vente du produit {reference}"},
         )
@@ -596,7 +607,7 @@ def vue_produit(profil: str, tools: list[str]) -> None:
             afficher_etapes(etapes, etapes.index("Documentation"))
         st.markdown("#### Ce que dit la documentation")
         doc = appeler(
-            profil,
+            assertion,
             "answer_question",
             {"question": f"quelles sont les caractéristiques techniques du {reference} ?"},
         )
@@ -616,7 +627,7 @@ QUESTIONS_EXEMPLE = [
 ]
 
 
-def vue_question(profil: str, tools: list[str]) -> None:
+def vue_question(assertion: str | None, tools: frozenset[str]) -> None:
     st.markdown(
         "<div class='panneau'><div class='intitule'>Interroger la documentation</div>"
         "<div class='aide'>Fiches techniques, notices et procédures SAV. Chaque réponse "
@@ -636,7 +647,7 @@ def vue_question(profil: str, tools: list[str]) -> None:
 
     if st.button("Rechercher", key="btn_question", type="primary") and question:
         with st.spinner("Analyse du corpus documentaire — une dizaine de secondes…"):
-            resultat = appeler(profil, "answer_question", {"question": question})
+            resultat = appeler(assertion, "answer_question", {"question": question})
         if resultat.get("statut") == "ok":
             afficher_reponse(resultat["reponse"])
             afficher_sources(resultat.get("citations", []))
@@ -644,7 +655,7 @@ def vue_question(profil: str, tools: list[str]) -> None:
             afficher_refus(resultat, "reprise_question")
 
 
-def vue_donnees(profil: str, tools: list[str]) -> None:
+def vue_donnees(assertion: str | None, tools: frozenset[str]) -> None:
     st.markdown(
         "<div class='panneau'><div class='intitule'>Interroger les données</div>"
         "<div class='aide'>Produits, stocks, clients, commandes et ventes, en langage "
@@ -657,7 +668,7 @@ def vue_donnees(profil: str, tools: list[str]) -> None:
     )
     if st.button("Interroger", key="btn_donnees", type="primary") and question:
         with st.spinner("Interrogation de la base…"):
-            resultat = appeler(profil, "ask_database", {"question": question})
+            resultat = appeler(assertion, "ask_database", {"question": question})
         if resultat.get("statut") == "ok":
             afficher_tableau(
                 resultat, "Essayez en nommant explicitement la table ou la période."
@@ -667,7 +678,7 @@ def vue_donnees(profil: str, tools: list[str]) -> None:
         afficher_sql(resultat)
 
 
-def vue_schema(profil: str, tools: list[str]) -> None:
+def vue_schema(assertion: str | None, tools: frozenset[str]) -> None:
     """`get_schema` : le schéma déjà filtré par la matrice, donc lisible comme un périmètre.
 
     Ce que ce profil n'a pas le droit de lire n'y figure pas — c'est la démonstration la plus
@@ -680,14 +691,14 @@ def vue_schema(profil: str, tools: list[str]) -> None:
         "</div></div>",
         unsafe_allow_html=True,
     )
-    schema = appeler(profil, "get_schema", {})
+    schema = appeler(assertion, "get_schema", {})
     if schema.get("statut") == "ok":
         st.code(schema["schema"], language="sql")
     else:
         afficher_refus(schema, "reprise_schema")
 
 
-def vue_commande(profil: str, tools: list[str]) -> None:
+def vue_commande(assertion: str | None, tools: frozenset[str]) -> None:
     st.subheader("Suivre une commande")
     identifiant = (
         st.text_input("Identifiant de commande", placeholder="CMD-2025-0004", key="id_commande")
@@ -695,7 +706,7 @@ def vue_commande(profil: str, tools: list[str]) -> None:
         .upper()
     )
     if st.button("Rechercher", key="btn_commande", type="primary") and identifiant:
-        resultat = appeler(profil, "order_status", {"order_id": identifiant})
+        resultat = appeler(assertion, "order_status", {"order_id": identifiant})
         if resultat.get("statut") != "ok":
             afficher_refus(resultat, "reprise_commande")
             return
@@ -723,7 +734,7 @@ def vue_commande(profil: str, tools: list[str]) -> None:
                 )
 
 
-def vue_recherche(profil: str, tools: list[str]) -> None:
+def vue_recherche(assertion: str | None, tools: frozenset[str]) -> None:
     """`search_docs` : les extraits bruts et leurs scores, sans passer par le LLM.
 
     C'est la brique du RAG utile à qui veut juger la source lui-même — un intégrateur, ou
@@ -741,7 +752,7 @@ def vue_recherche(profil: str, tools: list[str]) -> None:
     if st.button("Rechercher", key="btn_recherche", type="primary") and requete:
         with st.spinner("Recherche dans le corpus…"):
             resultat = appeler(
-                profil, "search_docs", {"requete": requete, "k": nombre}
+                assertion, "search_docs", {"requete": requete, "k": nombre}
             )
         if resultat.get("statut") != "ok":
             afficher_refus(resultat, "reprise_recherche")
@@ -768,7 +779,7 @@ def vue_recherche(profil: str, tools: list[str]) -> None:
                 )
 
 
-def vue_document(profil: str, tools: list[str]) -> None:
+def vue_document(assertion: str | None, tools: frozenset[str]) -> None:
     """`get_document` : le document canonique complet, par identifiant ou par référence."""
     st.markdown(
         "<div class='panneau'><div class='intitule'>Ouvrir un document</div>"
@@ -792,7 +803,7 @@ def vue_document(profil: str, tools: list[str]) -> None:
             st.warning("Renseignez une référence produit ou un identifiant de document.")
             return
         resultat = appeler(
-            profil,
+            assertion,
             "get_document",
             {
                 "doc_id": doc_id or None,
@@ -823,7 +834,7 @@ def vue_document(profil: str, tools: list[str]) -> None:
             st.caption("Références citées : " + ", ".join(references))
 
 
-def vue_inventaire(profil: str, tools: list[str]) -> None:
+def vue_inventaire(assertion: str | None, tools: frozenset[str]) -> None:
     st.markdown(
         "<div class='panneau'><div class='intitule'>Inventaire du corpus</div>"
         "<div class='aide'>Documents indexés et leurs versions, restreints au périmètre de "
@@ -837,7 +848,7 @@ def vue_inventaire(profil: str, tools: list[str]) -> None:
         key="type_doc",
     )
     if st.button("Afficher", key="btn_sources", type="primary"):
-        resultat = appeler(profil, "list_sources", {"type_document": type_document})
+        resultat = appeler(assertion, "list_sources", {"type_document": type_document})
         if resultat.get("statut") != "ok":
             afficher_refus(resultat, "reprise_sources")
             return
@@ -901,7 +912,7 @@ NAVIGATION = [
 ]
 
 
-def navigation_disponible(tools: list[str]) -> list[tuple[str, str, list[tuple]]]:
+def navigation_disponible(tools: frozenset[str]) -> list[tuple[str, str, list[tuple]]]:
     themes = []
     for theme, slug, ecrans in NAVIGATION:
         accessibles = [
@@ -912,6 +923,35 @@ def navigation_disponible(tools: list[str]) -> list[tuple[str, str, list[tuple]]
     return themes
 
 
+def page_inscription(sujet: str) -> None:
+    """Affichée quand l'identité est établie mais qu'aucun profil n'est attribué.
+
+    L'identité vient d'IAP et n'est pas négociable ; seul le profil est en libre-service, et
+    seulement en mode démonstration. Le bandeau le dit, pour qu'un visiteur ne prenne pas
+    cette facilité pour le fonctionnement normal du produit.
+    """
+    st.markdown(
+        "<div class='bandeau'><span class='marque'>" + LOGO + "</span>"
+        "<span class='titre'>Bienvenue sur la Sorabel Data Gateway</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.info(
+        "**Mode démonstration** — vous choisissez ici votre profil. En exploitation réelle, "
+        "les profils sont attribués par un administrateur ; votre identité, elle, est déjà "
+        "établie par Google et n'est pas modifiable."
+    )
+    st.caption(f"Connecté en tant que {sujet}")
+
+    for code, (libelle, _) in PROFILS.items():
+        colonne_texte, colonne_action = st.columns([4, 1])
+        with colonne_texte:
+            st.markdown(f"**{libelle}** — {DESCRIPTIONS_PROFIL[code]}")
+        with colonne_action:
+            if st.button("Choisir", key=f"choisir_{code}", use_container_width=True):
+                depot_identites().attribuer(sujet, code, source="demo")
+                st.rerun()
+
+
 def _selection(cle: str, valeurs: list[str]) -> str:
     """Maintient la sélection valide : un changement de profil peut la faire disparaître."""
     if st.session_state.get(cle) not in valeurs:
@@ -919,16 +959,26 @@ def _selection(cle: str, valeurs: list[str]) -> str:
     return st.session_state[cle]
 
 
+assertion = assertion_iap()
+sujet = sujet_du_jeton(assertion)
+
+if sujet is None:
+    # Hors périmètre du brief (qui vise le parcours authentifié derrière IAP) mais nécessaire
+    # en local : sans proxy devant Streamlit, `assertion_iap()` renvoie None et
+    # `sujet_du_jeton(None)` aussi (contrat de `front.passerelle`, Task 7). Sans cette garde,
+    # `page_inscription(None)` afficherait un trompeur « Connecté en tant que None ».
+    st.info("Session non authentifiée — cette page s'utilise derrière Identity-Aware Proxy.")
+    st.stop()
+
+profil = depot_identites().profil_de(sujet)
+if profil is None:
+    page_inscription(sujet)
+    st.stop()
+
+tools = tools_accordes(profil)
+
 with st.sidebar:
     st.markdown("### Sorabel Data Gateway")
-    profil = st.selectbox(
-        "Profil connecté", list(PROFILS), format_func=lambda p: PROFILS[p][0], key="profil"
-    )
-    if st.session_state.get("_profil_charge") != profil:
-        with st.spinner("Ouverture de la session…"):
-            st.session_state["_tools"] = lister_tools(profil)
-        st.session_state["_profil_charge"] = profil
-    tools = st.session_state.get("_tools", [])
 
     themes = navigation_disponible(tools)
     vue_courante = None
@@ -982,15 +1032,25 @@ with st.sidebar:
             f"<span class='compte'>{ouverts}/{len(ecrans)}</span></div>",
             unsafe_allow_html=True,
         )
-    with st.expander(f"Tools accordés par le serveur ({len(tools)}/8)"):
+    with st.expander(f"Tools accordés par la matrice d'accès ({len(tools)}/8)"):
         st.markdown(
             " ".join(f"<span class='etiquette gris'>{t}</span>" for t in tools),
             unsafe_allow_html=True,
         )
         st.caption(
-            "Ce que ce profil ne peut pas appeler n'apparaît pas : la matrice d'accès est "
-            "appliquée par le serveur, cette page ne fait que la refléter."
+            "Ce que ce profil ne peut pas appeler n'apparaît pas : cette page lit la même "
+            "matrice que le serveur applique à chaque appel — pas `tools/list`, qui renvoie "
+            "les 8 tools à tout appelant depuis que le périmètre est résolu par requête."
         )
+
+    with st.expander("Changer de profil"):
+        st.caption("Mode démonstration : la bascule est journalisée comme tout appel.")
+        nouveau = st.selectbox(
+            "Profil", list(PROFILS), format_func=lambda p: PROFILS[p][0], key="bascule"
+        )
+        if st.button("Appliquer", key="btn_bascule") and nouveau != profil:
+            depot_identites().attribuer(sujet, nouveau, source="demo")
+            st.rerun()
 
 libelle_profil, titre_poste = PROFILS[profil]
 st.markdown(
@@ -1014,4 +1074,4 @@ if vue_courante is None:
         "Ce profil n'a de droit sur aucun tool. Contactez l'exploitation.",
     )
 else:
-    vue_courante(profil, tools)
+    vue_courante(assertion, tools)
