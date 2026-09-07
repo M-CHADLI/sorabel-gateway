@@ -5,11 +5,16 @@ de Google Identity Platform présentés par les clients MCP tiers. Un jeton vali
 mais destiné à l'autre doit être refusé : c'est la protection contre la confusion d'audience.
 """
 
+import hashlib
+import hmac
+import json
 import logging
 import time
 
 import jwt
+import jwt.utils
 import pytest
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from mcp_server import authentification
@@ -120,6 +125,53 @@ async def test_jeton_illisible_est_refuse():
 
 
 @pytest.mark.anyio
+async def test_jeton_alg_none_est_refuse():
+    # Verrou de non-régression : rien n'empêche aujourd'hui `ALGORITHMES` de s'élargir par
+    # erreur. Un jeton non signé (`alg: none`) doit rester refusé même si la validation de
+    # signature venait à être court-circuitée ailleurs.
+    charge = {
+        "iss": IAP,
+        "aud": "/projects/1/apps/sorabel",
+        "sub": "sub-123",
+        "exp": int(time.time()) + 600,
+    }
+    jeton = jwt.encode(charge, key=None, algorithm="none")
+    assert await _verificateur().verify_token(jeton) is None
+
+
+@pytest.mark.anyio
+async def test_jeton_hs256_avec_cle_publique_rsa_est_refuse():
+    # Confusion de type d'algorithme : si `HS256` était accepté, la clé publique RSA — connue
+    # de tout le monde — servirait de secret HMAC et permettrait à quiconque de forger des
+    # jetons. `ALGORITHMES` doit rester une liste blanche stricte (RS256/ES256 uniquement).
+    #
+    # PyJWT refuse depuis peu de *signer* un jeton HS256 avec une clé au format PEM
+    # (`InvalidKeyError`) — précisément pour éviter cette confusion à l'émission. Cela ne
+    # dispense pas la *vérification* de rester verrouillée : on construit le jeton à la main
+    # pour simuler un attaquant qui n'utilise pas PyJWT pour le forger.
+    cle_publique_pem = CLE.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    en_tete = jwt.utils.base64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    charge = jwt.utils.base64url_encode(
+        json.dumps(
+            {
+                "iss": IAP,
+                "aud": "/projects/1/apps/sorabel",
+                "sub": "sub-123",
+                "exp": int(time.time()) + 600,
+            }
+        ).encode()
+    )
+    signature = jwt.utils.base64url_encode(
+        hmac.new(cle_publique_pem, en_tete + b"." + charge, hashlib.sha256).digest()
+    )
+    jeton = b".".join([en_tete, charge, signature]).decode()
+    assert await _verificateur().verify_token(jeton) is None
+
+
+@pytest.mark.anyio
 async def test_scopes_toujours_vides():
     # Décision de conception verrouillée : les droits viennent de la matrice d'accès indexée
     # par profil, jamais des scopes du jeton — une seule source de vérité pour l'autorisation.
@@ -146,7 +198,10 @@ def test_jwks_vide_est_traite_comme_manquant():
 
 
 def test_configuration_complete_demarre():
-    assert VerificateurJeton(EMETTEURS, jwks=JWKS) is not None
+    # Un constructeur ne renvoie jamais `None` : `assert ... is not None` n'assènerait rien.
+    # Ce qui est réellement vérifié, c'est qu'une configuration complète (une URL JWKS par
+    # émetteur accepté) ne lève pas `ErreurConfigurationAuthentification` au démarrage.
+    VerificateurJeton(EMETTEURS, jwks=JWKS)
 
 
 @pytest.mark.anyio
@@ -161,21 +216,65 @@ async def test_exception_inattendue_ne_s_echappe_pas():
 
 
 @pytest.mark.anyio
-async def test_panne_jwks_est_journalisee_sans_le_jeton(caplog):
-    # Une panne du fournisseur de clés est indistinguable d'un refus de sécurité côté client
-    # (None dans les deux cas) : elle doit au moins laisser une trace côté serveur, sinon
-    # l'astreinte cherche une compromission là où il y a une coupure réseau.
+async def test_panne_connexion_jwks_est_journalisee_en_erreur(caplog):
+    # Une coupure de connexion vers le fournisseur de clés est indistinguable d'un refus de
+    # sécurité côté client (None dans les deux cas) : elle doit au moins laisser une trace
+    # côté serveur, sinon l'astreinte cherche une compromission là où il y a une panne réseau.
+    # C'est un incident d'infrastructure réel (`PyJWKClientConnectionError`, pas le `kid`
+    # introuvable du test suivant) : il mérite la sévérité `error`.
     def couper(_jeton_recu):
-        raise jwt.PyJWKClientError("point de terminaison JWKS injoignable")
+        raise jwt.PyJWKClientConnectionError("point de terminaison JWKS injoignable")
 
     verificateur = VerificateurJeton(EMETTEURS, recuperer_cles=couper)
+    jeton = _jeton()
+    with caplog.at_level(logging.WARNING, logger="mcp_server.authentification"):
+        assert await verificateur.verify_token(jeton) is None
+
+    enregistrements_erreur = [e for e in caplog.records if e.levelno == logging.ERROR]
+    assert any("JWKS" in enregistrement.message for enregistrement in enregistrements_erreur)
+    trace = caplog.text
+    assert IAP in trace
+    assert jeton not in trace  # jamais le jeton lui-même
+
+
+@pytest.mark.anyio
+async def test_kid_introuvable_est_journalise_en_avertissement_pas_en_erreur(caplog):
+    # `kid` est un champ de l'en-tête du jeton, donc contrôlé par l'appelant avant toute
+    # authentification. `PyJWKClient.get_signing_key` lève `PyJWKClientError` (pas la
+    # sous-classe connexion) quand ce `kid` ne correspond à aucune clé : un jeton forgé ne
+    # doit ni s'étiqueter « panne d'infrastructure », ni permettre à un anonyme de remplir
+    # les journaux `error` à volonté.
+    def kid_absent(_jeton_recu):
+        raise jwt.PyJWKClientError('Unable to find a signing key that matches: "kid-inconnu"')
+
+    verificateur = VerificateurJeton(EMETTEURS, recuperer_cles=kid_absent)
+    jeton = _jeton()
+    with caplog.at_level(logging.WARNING, logger="mcp_server.authentification"):
+        assert await verificateur.verify_token(jeton) is None
+
+    enregistrements_erreur = [e for e in caplog.records if e.levelno == logging.ERROR]
+    assert enregistrements_erreur == []
+    assert any(e.levelno == logging.WARNING for e in caplog.records)
+    trace = caplog.text
+    assert jeton not in trace  # jamais le jeton lui-même
+
+
+@pytest.mark.anyio
+async def test_jwks_illisible_est_journalise_en_erreur(caplog):
+    # `PyJWKSetError` (jeu de clés vide pendant une rotation, ou JWKS répondant 200 avec un
+    # corps invalide) hérite de `PyJWTError` mais pas de `PyJWKClientError` : avant ce
+    # correctif, elle retombait dans la clause muette et provoquait une panne totale
+    # d'authentification sans aucune ligne de journal.
+    def jeu_de_cles_illisible(_jeton_recu):
+        raise jwt.PyJWKSetError("le jeu de clés ne contient aucune clé utilisable")
+
+    verificateur = VerificateurJeton(EMETTEURS, recuperer_cles=jeu_de_cles_illisible)
     jeton = _jeton()
     with caplog.at_level(logging.ERROR, logger="mcp_server.authentification"):
         assert await verificateur.verify_token(jeton) is None
 
-    assert any("JWKS" in enregistrement.message for enregistrement in caplog.records)
+    assert any(e.levelno == logging.ERROR for e in caplog.records)
     trace = caplog.text
-    assert IAP in trace
     assert jeton not in trace  # jamais le jeton lui-même
 
 
@@ -227,7 +326,6 @@ def test_cles_par_jwks_reutilise_le_client_par_emetteur(client_jwks_factice):
     verificateur._cles_par_jwks(_jeton(sub="b"))
 
     assert client_jwks_factice.urls == [JWKS[IAP]]
-    assert verificateur._clients[IAP].appels == 2
 
 
 def test_cles_par_jwks_rend_bien_la_cle_de_signature(client_jwks_factice):

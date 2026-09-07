@@ -99,12 +99,29 @@ class VerificateurJeton(TokenVerifier):
                 issuer=emetteur,
                 options={"require": CLAIMS_REQUIS},
             )
-        except jwt.PyJWKClientError as erreur:
-            # `PyJWKClientError` hérite de `PyJWTError` : sans ce cas dédié, une coupure vers
-            # le fournisseur de clés serait indistinguable d'un jeton falsifié et l'astreinte
-            # chercherait une compromission là où il y a une panne. Le client reçoit toujours
-            # None (aucune fuite), mais le serveur trace l'incident. Jamais le jeton lui-même.
-            _journal.error("JWKS indisponible pour l'émetteur %s : %s", emetteur, erreur)
+        except (jwt.PyJWKClientError, jwt.PyJWKSetError, jwt.PyJWKError) as erreur:
+            # Ces trois exceptions héritent de `PyJWTError` mais pas toutes de
+            # `PyJWKClientError` (`PyJWKSetError` et `PyJWKError` en sont des soeurs, pas des
+            # filles) : sans les nommer ici, elles retombaient dans la clause muette du dessous
+            # — un JWKS qui répond 200 avec un corps invalide (page d'erreur d'un proxy, jeu de
+            # clés vide pendant une rotation) provoquait alors une panne totale
+            # d'authentification sans une seule ligne de journal.
+            #
+            # Mais toute occurrence de `PyJWKClientError` n'est pas une panne : `kid` est un
+            # champ de l'en-tête du jeton, donc entièrement choisi par l'appelant, *avant*
+            # toute authentification. `PyJWKClient.get_signing_key` lève ce même type
+            # d'exception quand ce `kid` ne correspond à aucune clé connue — un événement
+            # d'authentification ordinaire (jeton forgé, clé pas encore propagée côté client),
+            # pas un incident d'infrastructure. Le journaliser en `error` étiquetterait une
+            # tentative de forge comme « JWKS indisponible » (diagnostic inversé), permettrait
+            # à n'importe quel appelant anonyme de remplir les journaux `error` à volonté sur un
+            # service facturé au volume, et noierait les vraies pannes. Seules une coupure de
+            # connexion (`PyJWKClientConnectionError`) ou un jeu de clés illisible/vide
+            # (`PyJWKSetError`, `PyJWKError`) relèvent réellement de l'infrastructure.
+            if isinstance(erreur, jwt.PyJWKClientError) and not isinstance(erreur, jwt.PyJWKClientConnectionError):
+                _journal.warning("clé de signature introuvable pour l'émetteur %s : %s", emetteur, erreur)
+            else:
+                _journal.error("JWKS indisponible pour l'émetteur %s : %s", emetteur, erreur)
             return None
         except jwt.PyJWTError:
             return None
