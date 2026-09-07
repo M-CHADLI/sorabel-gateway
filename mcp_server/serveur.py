@@ -14,7 +14,7 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from pydantic import AnyHttpUrl
 
-from gouvernance.identites import DepotIdentitesSqlite
+from gouvernance.depots import choisir_depot
 from gouvernance.modeles import charger_matrice
 from gouvernance.perimetre import Perimetre
 
@@ -61,36 +61,6 @@ def _emetteurs() -> dict[str, str]:
     return emetteurs
 
 
-def _choisir_depot_http(chemin_gouvernance_db: Path, matrice):
-    """Choisit l'implémentation du dépôt d'identités pour le transport HTTP, selon
-    `SORABEL_DEPOT` — même patron que `front.depot.depot_identites` (§5 de la conception
-    GCP : Firestore est lu par le serveur et lu/écrit par le front, jamais l'inverse).
-
-    N'est appelée qu'en HTTP : en stdio, personne ne configure Firestore pour une session
-    de développement locale, et le profil ne vient de toute façon jamais du dépôt.
-
-    Une variable oubliée ou mal orthographiée retomberait sinon silencieusement sur
-    SQLite : chaque instance Cloud Run lirait alors sa propre copie figée dans l'image,
-    invisible des attributions que le front écrit dans Firestore. D'où la trace sur
-    stdout, cohérente avec `SORABEL_JOURNAL=stdout`.
-    """
-    if os.environ.get("SORABEL_DEPOT") == "firestore":
-        # Import local : ne pas imposer cette dépendance au transport stdio, où elle
-        # n'est jamais utilisée.
-        from google.cloud import firestore
-
-        from gouvernance.identites_firestore import DepotIdentitesFirestore
-
-        print("construire_serveur : implémentation Firestore (SORABEL_DEPOT=firestore)")
-        return DepotIdentitesFirestore(
-            firestore.Client(), profils_valides=frozenset(matrice.profils)
-        )
-
-    valeur = os.environ.get("SORABEL_DEPOT")
-    print(f"construire_serveur : implémentation SQLite (SORABEL_DEPOT={valeur!r})")
-    return DepotIdentitesSqlite(chemin_gouvernance_db)
-
-
 def construire_serveur(
     chemin_gouvernance_db: Path = CHEMIN_GOUVERNANCE_DB, depot_identites=None
 ) -> FastMCP:
@@ -102,7 +72,9 @@ def construire_serveur(
         enregistrer_tools(mcp, lambda: perimetre_fige)
         return mcp
 
-    depot = depot_identites or _choisir_depot_http(chemin_gouvernance_db, matrice)
+    depot = depot_identites or choisir_depot(
+        chemin_gouvernance_db, profils_valides=frozenset(matrice.profils)
+    )
 
     def resolveur() -> Perimetre:
         acces = get_access_token()

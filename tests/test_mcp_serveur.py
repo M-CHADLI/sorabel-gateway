@@ -202,9 +202,10 @@ def test_en_http_sans_sorabel_depot_firestore_le_serveur_reste_sur_sqlite(
     monkeypatch, tmp_path, valeur_depot
 ):
     """Comportement actuel inchangé : sans SORABEL_DEPOT=firestore (absente, ou toute autre
-    valeur), le résolveur continue de lire gouvernance.db — jamais Firestore. Si le code
-    tentait malgré tout de construire un firestore.Client(), ce test échouerait au premier
-    appel réseau réel (aucun monkeypatch n'est posé ici)."""
+    valeur), le résolveur continue de lire gouvernance.db — jamais Firestore. La garantie est
+    rendue explicite plutôt que circonstancielle : un firestore.Client() interdit ici lève
+    immédiatement une AssertionError, sans dépendre de ce que ferait réellement une
+    construction non configurée sur la machine qui exécute le test."""
     chemin = tmp_path / "gouvernance.db"
     peupler(chemin)
     from gouvernance.identites import DepotIdentitesSqlite
@@ -216,6 +217,11 @@ def test_en_http_sans_sorabel_depot_firestore_le_serveur_reste_sur_sqlite(
         monkeypatch.delenv("SORABEL_DEPOT", raising=False)
     else:
         monkeypatch.setenv("SORABEL_DEPOT", valeur_depot)
+
+    def _client_interdit(*args, **kwargs):
+        raise AssertionError("firestore.Client() ne doit pas être construit sans SORABEL_DEPOT=firestore")
+
+    monkeypatch.setattr("google.cloud.firestore.Client", _client_interdit)
 
     mcp = construire_serveur(chemin_gouvernance_db=chemin)
 

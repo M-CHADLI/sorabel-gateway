@@ -11,9 +11,9 @@ dit donc plus rien sur ce qu'un profil PEUT appeler.
 from __future__ import annotations
 
 import functools
-import os
 from pathlib import Path
 
+from gouvernance.depots import choisir_depot
 from gouvernance.modeles import CodeTool, charger_matrice
 from gouvernance.perimetre import Perimetre
 
@@ -33,22 +33,10 @@ def tools_accordes(profil: str) -> frozenset[str]:
 
 @functools.lru_cache(maxsize=1)
 def depot_identites():
-    # Trace explicite de l'implémentation choisie : une variable d'environnement oubliée ou
-    # mal orthographiée sur le déploiement fait retomber silencieusement sur SQLite, chaque
-    # instance Cloud Run écrivant alors dans sa propre copie éphémère de l'image — invisible
-    # du serveur MCP. Un simple message sur stdout, cohérent avec `SORABEL_JOURNAL=stdout`.
-    if os.environ.get("SORABEL_DEPOT") == "firestore":
-        from google.cloud import firestore
-
-        from gouvernance.identites_firestore import DepotIdentitesFirestore
-
-        print("depot_identites : implémentation Firestore (SORABEL_DEPOT=firestore)")
-        return DepotIdentitesFirestore(
-            firestore.Client(), profils_valides=frozenset(_matrice().profils)
-        )
-
-    from gouvernance.identites import DepotIdentitesSqlite
-
-    valeur = os.environ.get("SORABEL_DEPOT")
-    print(f"depot_identites : implémentation SQLite (SORABEL_DEPOT={valeur!r})")
-    return DepotIdentitesSqlite(RACINE / "gouvernance" / "gouvernance.db")
+    # Mise en cache par process : Streamlit réexécute le script à chaque interaction, la
+    # décision (et la connexion qu'elle construit) ne doit être prise qu'une fois. Le choix
+    # lui-même est délégué à choisir_depot(), commun avec mcp_server.serveur.
+    return choisir_depot(
+        RACINE / "gouvernance" / "gouvernance.db",
+        profils_valides=frozenset(_matrice().profils),
+    )
