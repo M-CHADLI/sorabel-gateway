@@ -8,6 +8,7 @@ base sans les contrôles d'accès de la base.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,6 +41,12 @@ def journaliser(
         "duree_ms": duree_ms,
         "motif": motif,
     }
+    # Sur Cloud Run, un fichier disparaît avec le conteneur : la sortie standard est le
+    # seul journal durable, et Cloud Logging l'indexe sans agent.
+    if os.environ.get("SORABEL_JOURNAL") == "stdout":
+        print(json.dumps(ligne, ensure_ascii=False), flush=True)
+        return
+
     CHEMIN_JOURNAL.parent.mkdir(parents=True, exist_ok=True)
     with CHEMIN_JOURNAL.open("a", encoding="utf-8") as fichier:
         fichier.write(json.dumps(ligne, ensure_ascii=False) + "\n")

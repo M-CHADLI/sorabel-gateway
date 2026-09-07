@@ -46,3 +46,36 @@ def test_journaliser_cree_le_dossier_logs_sil_manque(tmp_path, monkeypatch):
     journal.journaliser(profil="dev", tool="search_docs", autorise=True, statut="ok", entrees={})
 
     assert chemin.exists()
+
+
+def test_journal_sur_stdout_quand_la_variable_le_demande(monkeypatch, capsys):
+    """Cloud Logging indexe la sortie standard sans agent : en production, on n'écrit
+    plus de fichier, qui serait de toute façon perdu au recyclage du conteneur."""
+    monkeypatch.setenv("SORABEL_JOURNAL", "stdout")
+    from gouvernance.journal import journaliser
+
+    journaliser(
+        profil="support",
+        tool="ask_database",
+        autorise=False,
+        statut="non_autorise",
+        entrees={"question": "quelles marges ?"},
+        motif="tool hors perimetre",
+    )
+    ligne = json.loads(capsys.readouterr().out.strip())
+    assert ligne["profil"] == "support"
+    assert ligne["autorise"] is False
+    assert ligne["statut"] == "non_autorise"
+
+
+def test_journal_dans_un_fichier_par_defaut(monkeypatch, tmp_path):
+    monkeypatch.delenv("SORABEL_JOURNAL", raising=False)
+    import gouvernance.journal as journal
+
+    monkeypatch.setattr(journal, "CHEMIN_JOURNAL", tmp_path / "appels.jsonl")
+    journal.journaliser(
+        profil="commercial", tool="check_stock", autorise=True,
+        statut="ok", entrees={"ref": "REF-8842"},
+    )
+    contenu = (tmp_path / "appels.jsonl").read_text(encoding="utf-8")
+    assert json.loads(contenu.strip())["tool"] == "check_stock"
