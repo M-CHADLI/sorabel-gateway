@@ -1209,28 +1209,57 @@ git commit -m "feat(front): passerelle HTTP relayant l'assertion IAP"
 
 ### Task 8: Page d'inscription et changement de profil
 
+**Décision d'architecture, arbitrée avant l'écriture de cette tâche (revue de la Task 4).**
+Depuis la Task 4, `tools/list` renvoie **les 8 tools pour tout appelant** — le filtrage par
+profil a migré de l'enregistrement vers le décorateur, résolu à chaque requête. Un front qui
+dériverait sa navigation de `lister_tools()` (donc de `tools/list`) afficherait 8/8 pour
+*tous* les profils, y compris `dev` : le bandeau de gouvernance mentirait, et quatre entrées
+de menu mortes apparaîtraient en profil restreint. C'est un vrai bug, pas une nuance.
+
+**La correction ne touche pas FastMCP.** La matrice d'accès est figée dans l'image, en
+lecture seule, au même endroit pour les deux services (§5 de la conception GCP). Le front
+peut donc calculer les droits d'un profil en lisant **la même matrice que le serveur**, sans
+passer par le protocole MCP :
+
+```python
+from gouvernance.modeles import charger_matrice
+from gouvernance.perimetre import Perimetre
+
+matrice = charger_matrice(RACINE / "gouvernance" / "gouvernance.db")
+perimetre = Perimetre(profil, matrice)
+tools_accordes = {t for t in CodeTool.__args__ if perimetre.peut_appeler(t)}
+```
+
+`tools/list` (via `lister_tools()`) garde un rôle, mais un rôle différent : vérifier que le
+transport répond, pas décider ce qui s'affiche. Aucune UI ne doit plus se brancher dessus.
+
 **Files:**
 - Modify: `front/app_client.py`
 - Create: `front/depot.py`
 
 **Interfaces:**
-- Consumes: `assertion_iap`, `sujet_du_jeton`, `lister_tools`, `appeler` de `front.passerelle` (Task 7) ; `DepotIdentitesSqlite` (Task 1) et `DepotIdentitesFirestore` (Task 6).
-- Produces: `front.depot.depot_identites()` — la fabrique, seule à connaître les deux implémentations.
+- Consumes: `assertion_iap`, `sujet_du_jeton`, `appeler` de `front.passerelle` (Task 7) ; `DepotIdentitesSqlite` (Task 1) et `DepotIdentitesFirestore` (Task 6) ; `charger_matrice` de `gouvernance.modeles` et `Perimetre` de `gouvernance.perimetre` (déjà existants, Phase 4).
+- Produces: `front.depot.depot_identites()` — la fabrique, seule à connaître les deux implémentations d'identités. `front.depot.tools_accordes(profil) -> frozenset[str]` — les droits du profil, lus depuis la matrice figée, indépendamment du protocole MCP.
 
 - [ ] **Step 1: Remplacer la source des tools et du profil**
 
-Dans la barre latérale, le `st.selectbox` de profil disparaît. À la place :
+Dans la barre latérale, le `st.selectbox` de profil disparaît. La navigation cesse de
+dépendre de `tools/list` :
 
 ```python
-from front.depot import depot_identites
-from front.passerelle import appeler, assertion_iap, lister_tools, sujet_du_jeton
+from front.depot import depot_identites, tools_accordes
+from front.passerelle import appeler, assertion_iap, sujet_du_jeton
 
 assertion = assertion_iap()
 sujet = sujet_du_jeton(assertion)
 profil = depot_identites().profil_de(sujet) if sujet else None
+tools = tools_accordes(profil) if profil else frozenset()
 ```
 
-Les appels `appeler(profil, "tool", {...})` deviennent `appeler(assertion, "tool", {...})` dans les huit vues — le profil n'est plus un paramètre d'appel, il est porté par le jeton.
+`tools` remplace l'ancien `st.session_state["_tools"]` alimenté par `lister_tools()` partout
+où `NAVIGATION` et le panneau « Accès accordés » le consultent. Les appels
+`appeler(profil, "tool", {...})` deviennent `appeler(assertion, "tool", {...})` dans les huit
+vues — le profil n'est plus un paramètre d'appel, il est porté par le jeton.
 
 - [ ] **Step 2: Écrire la page d'inscription**
 
@@ -1289,17 +1318,25 @@ En bas de la barre latérale :
         )
         if st.button("Appliquer", key="btn_bascule") and nouveau != profil:
             depot_identites().attribuer(sujet, nouveau, source="demo")
-            st.session_state.pop("_tools", None)
             st.rerun()
 ```
 
-- [ ] **Step 4: Créer la fabrique de dépôt**
+Le `st.session_state.pop("_tools", None)` disparaît : il n'y a plus de cache de tools issu de
+`tools/list` à invalider. `tools_accordes(profil)` est recalculé à chaque script Streamlit à
+partir du nouveau `profil`, sans état à purger.
+
+- [ ] **Step 4: Créer la fabrique de dépôt et le calcul des droits**
 
 ```python
 # front/depot.py
-"""Choisit l'implémentation du dépôt d'identités selon l'environnement.
+"""Choisit l'implémentation du dépôt d'identités selon l'environnement, et calcule les
+droits d'un profil depuis la matrice figée dans l'image.
 
-Un seul endroit décide, pour que ni le front ni les tests n'aient à connaître les deux.
+Ce module ne parle jamais au serveur MCP : la matrice est un fichier en lecture seule,
+identique pour les deux services (§5 de la conception GCP). Calculer les droits ici plutôt
+que via `tools/list` est une décision délibérée (revue de la Task 4) : depuis que le
+périmètre est résolu par requête, `tools/list` renvoie les 8 tools à tout appelant, et ne
+dit donc plus rien sur ce qu'un profil PEUT appeler.
 """
 
 from __future__ import annotations
@@ -1308,7 +1345,21 @@ import functools
 import os
 from pathlib import Path
 
+from gouvernance.modeles import CodeTool, charger_matrice
+from gouvernance.perimetre import Perimetre
+
 RACINE = Path(__file__).resolve().parent.parent
+
+
+@functools.lru_cache(maxsize=1)
+def _matrice():
+    return charger_matrice(RACINE / "gouvernance" / "gouvernance.db")
+
+
+def tools_accordes(profil: str) -> frozenset[str]:
+    """Les tools que ce profil peut appeler, lus dans la matrice — jamais dans `tools/list`."""
+    perimetre = Perimetre(profil, _matrice())
+    return frozenset(t for t in CodeTool.__args__ if perimetre.peut_appeler(t))
 
 
 @functools.lru_cache(maxsize=1)
@@ -1317,17 +1368,20 @@ def depot_identites():
         from google.cloud import firestore
 
         from gouvernance.identites_firestore import DepotIdentitesFirestore
-        from gouvernance.modeles import charger_matrice
 
-        matrice = charger_matrice(RACINE / "gouvernance" / "gouvernance.db")
         return DepotIdentitesFirestore(
-            firestore.Client(), profils_valides=frozenset(matrice.profils)
+            firestore.Client(), profils_valides=frozenset(_matrice().profils)
         )
 
     from gouvernance.identites import DepotIdentitesSqlite
 
     return DepotIdentitesSqlite(RACINE / "gouvernance" / "gouvernance.db")
 ```
+
+**Attention** : `CodeTool.__args__` suppose que `CodeTool` reste un `Literal[...]` dans
+`gouvernance/modeles.py` (vérifié à la Task 1 — c'est le cas). Si ce type change de forme,
+adapter l'énumération en conséquence plutôt que de coder les 8 noms en dur ici : une seule
+source de vérité pour la liste des tools.
 
 - [ ] **Step 5: Vérifier à la main en local**
 
