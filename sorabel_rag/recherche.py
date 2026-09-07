@@ -88,7 +88,7 @@ PREFERENCE_TYPE_SUR_REFERENCE_SEULE = {"fiche_technique": 0.02, "notice": 0.01}
 
 # Une "collection" de gouvernance n'est pas une collection Chroma : c'est un regroupement
 # métier (chantier 3) qui se traduit en filtre sur type_document (+ sous_type pour distinguer
-# les deux familles de notes — cf. docs/conception_mcp.md §2).
+# les deux familles de notes — cf. docs/conception.md, chantier MCP §2).
 SOUS_TYPES_OPERATIONNELS = frozenset({"logistique", "alerte_qualite", "retour_terrain"})
 SOUS_TYPES_CONFIDENTIELS = frozenset({"politique_tarifaire", "reunion_achat"})
 

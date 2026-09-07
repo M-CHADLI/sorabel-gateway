@@ -1,4 +1,4 @@
-"""Peuple gouvernance.db avec la matrice d'accès exacte de docs/conception_mcp.md §2.
+"""Peuple gouvernance.db avec la matrice d'accès exacte de docs/conception.md (chantier MCP §2).
 
 Script d'administration : c'est le SEUL endroit du dépôt qui écrit la matrice (profils,
 tools, collections, tables, colonnes interdites) dans gouvernance.db — elle se modifie hors

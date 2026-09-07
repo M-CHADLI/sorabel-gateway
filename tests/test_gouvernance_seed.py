@@ -1,4 +1,4 @@
-"""Peuplement de gouvernance.db : la matrice exacte de docs/conception_mcp.md §2."""
+"""Peuplement de gouvernance.db : la matrice exacte de docs/conception.md (chantier MCP §2)."""
 
 import sqlite3
 
