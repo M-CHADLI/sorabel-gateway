@@ -8,6 +8,10 @@ logs/
 eval/
 data/canonique/
 data/chroma/
+# Gouvernance : régénérable par scripts/seed_gouvernance.py — sinon la ligne 63 du
+# Dockerfile (COPY gouvernance/ gouvernance/) écraserait la base propre de l'étape
+# `index` par un fichier local potentiellement périmé.
+gouvernance/*.db
 __pycache__/
 **/__pycache__/
 *.pyc
