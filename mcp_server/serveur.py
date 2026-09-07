@@ -1,9 +1,7 @@
-"""Serveur MCP stdio : résout le profil, charge et valide la matrice au démarrage, enregistre
-les tools autorisés.
+"""Serveur MCP : stdio en développement, HTTP streamable en production.
 
-`resoudre_profil` est le SEUL point qui dépend du transport (ici, stdio : variable
-d'environnement du sous-processus). Passer en HTTP/OAuth ne toucherait que cette fonction —
-tout le reste (matrice, Perimetre, tools) est inchangé d'un transport à l'autre.
+`resoudre_profil_stdio` et `resoudre_profil_http` sont les DEUX seuls points liés au
+transport. Le reste — matrice, Perimetre, tools — est identique d'un mode à l'autre.
 """
 
 from __future__ import annotations
@@ -11,37 +9,97 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from mcp.server.auth.middleware.auth_context import get_access_token
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
+from pydantic import AnyHttpUrl
 
+from gouvernance.identites import DepotIdentitesSqlite
 from gouvernance.modeles import charger_matrice
 from gouvernance.perimetre import Perimetre
 
+from .authentification import VerificateurJeton
 from .tools import enregistrer_tools
 
 RACINE = Path(__file__).resolve().parent.parent
 CHEMIN_GOUVERNANCE_DB = RACINE / "gouvernance" / "gouvernance.db"
 
 
-def resoudre_profil() -> str:
+def transport() -> str:
+    return os.environ.get("SORABEL_TRANSPORT", "stdio")
+
+
+def resoudre_profil_stdio() -> str:
     profil = os.environ.get("SORABEL_PROFIL")
     if not profil:
         raise RuntimeError(
-            "SORABEL_PROFIL doit être défini avant de lancer le serveur "
+            "SORABEL_PROFIL doit être défini en transport stdio "
             "(ex. SORABEL_PROFIL=support python -m mcp_server.serveur)"
         )
     return profil
 
 
-def construire_serveur(chemin_gouvernance_db: Path = CHEMIN_GOUVERNANCE_DB) -> FastMCP:
+def resoudre_profil_http(depot, sujet: str) -> str:
+    """Le profil vient du dépôt d'identités, jamais de l'appelant.
+
+    Un sujet authentifié mais inconnu du dépôt n'obtient AUCUN profil par défaut : le
+    serveur n'inscrit personne, c'est le front qui propose l'inscription.
+    """
+    profil = depot.profil_de(sujet)
+    if profil is None:
+        raise PermissionError(f"aucun profil attribué au sujet {sujet!r}")
+    return profil
+
+
+def _emetteurs() -> dict[str, str]:
+    """URL d'émetteur → audience attendue, l'un pour IAP, l'autre pour les clients tiers."""
+    emetteurs = {}
+    if audience_iap := os.environ.get("SORABEL_IAP_AUDIENCE"):
+        emetteurs["https://cloud.google.com/iap"] = audience_iap
+    if emetteur := os.environ.get("SORABEL_OIDC_ISSUER"):
+        emetteurs[emetteur] = os.environ["SORABEL_OIDC_AUDIENCE"]
+    return emetteurs
+
+
+def construire_serveur(
+    chemin_gouvernance_db: Path = CHEMIN_GOUVERNANCE_DB, depot_identites=None
+) -> FastMCP:
     matrice = charger_matrice(chemin_gouvernance_db)
-    perimetre = Perimetre(resoudre_profil(), matrice)
-    mcp = FastMCP(name="sorabel-data-gateway")
-    # enregistrer_tools attend désormais un résolveur, appelé à chaque requête (Task 4) :
-    # en stdio le périmètre est déjà fixé au démarrage, donc une fermeture triviale suffit.
-    # L'adaptation complète (résolution depuis le jeton HTTP) est du ressort de la Task 5.
-    enregistrer_tools(mcp, lambda: perimetre)
+    depot = depot_identites or DepotIdentitesSqlite(chemin_gouvernance_db)
+
+    if transport() == "stdio":
+        perimetre_fige = Perimetre(resoudre_profil_stdio(), matrice)
+        mcp = FastMCP(name="sorabel-data-gateway")
+        enregistrer_tools(mcp, lambda: perimetre_fige)
+        return mcp
+
+    def resolveur() -> Perimetre:
+        acces = get_access_token()
+        if acces is None:
+            raise PermissionError("appel non authentifié")
+        return Perimetre(resoudre_profil_http(depot, acces.subject), matrice)
+
+    mcp = FastMCP(
+        name="sorabel-data-gateway",
+        token_verifier=VerificateurJeton(
+            _emetteurs(),
+            jwks={
+                "https://cloud.google.com/iap": "https://www.gstatic.com/iap/verify/public_key-jwk",
+                os.environ.get("SORABEL_OIDC_ISSUER", ""): os.environ.get("SORABEL_OIDC_JWKS", ""),
+            },
+        ),
+        auth=AuthSettings(
+            issuer_url=AnyHttpUrl(os.environ["SORABEL_OIDC_ISSUER"]),
+            resource_server_url=AnyHttpUrl(os.environ["SORABEL_URL_PUBLIQUE"]),
+            required_scopes=[],
+        ),
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8080)),
+    )
+    enregistrer_tools(mcp, resolveur)
     return mcp
 
 
 if __name__ == "__main__":
-    construire_serveur().run(transport="stdio")
+    mode = "stdio" if transport() == "stdio" else "streamable-http"
+    construire_serveur().run(transport=mode)
