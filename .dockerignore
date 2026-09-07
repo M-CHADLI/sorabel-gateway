@@ -1,0 +1,16 @@
+.venv/
+.git/
+.claude/
+.superpowers/
+docs/
+tests/
+logs/
+eval/
+data/canonique/
+data/chroma/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.env
+*.log
