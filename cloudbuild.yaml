@@ -73,7 +73,7 @@ steps:
       - --service-account=sorabel-front@$PROJECT_ID.iam.gserviceaccount.com
       - --command=streamlit
       - --args=run,front/app_client.py,--server.port=8080,--server.address=0.0.0.0
-      - --set-env-vars=SORABEL_DEPOT=firestore,SORABEL_JOURNAL=stdout
+      - --set-env-vars=SORABEL_DEPOT=firestore,SORABEL_JOURNAL=stdout,SORABEL_URL_MCP=$_SORABEL_URL_MCP
       - --session-affinity
       - --min-instances=0
       - --max-instances=2
@@ -107,6 +107,18 @@ availableSecrets:
 # ni Google Identity Platform/IAP ni la ressource Azure de génération ne sont encore
 # provisionnés. À LA TÂCHE 11 (provisionnement GCP réel) : renseigner ces sept
 # substitutions dans la configuration du déclencheur Cloud Build.
+#
+# _SORABEL_URL_MCP : front/passerelle.py s'en sert pour joindre le service
+# sorabel-mcp (repli sur http://localhost:8080/mcp sinon, ce qui dans le conteneur
+# `sorabel-front` désigne Streamlit lui-même — pas le serveur MCP). Contrairement
+# aux variables ci-dessus, ce n'est pas un défaut de provisionnement : sa valeur ne
+# peut être connue qu'après le premier déploiement de `sorabel-mcp`, puisque c'est
+# l'URL Cloud Run attribuée à ce service (stable ensuite d'un déploiement à
+# l'autre). À LA TÂCHE 11 : déployer `sorabel-mcp` une première fois, récupérer son
+# URL (gcloud run services describe sorabel-mcp --region=... --format='value(status.url)'),
+# puis renseigner cette substitution dans la configuration du déclencheur — sans
+# quoi `deploy-front` démarre sans erreur mais chaque appel de tool échoue
+# silencieusement dès la première interaction utilisateur.
 substitutions:
   _REGION: europe-west1
   _IMAGE: europe-west1-docker.pkg.dev/${PROJECT_ID}/sorabel/gateway
@@ -119,6 +131,7 @@ substitutions:
   _SORABEL_IAP_AUDIENCE: ""
   _SORABEL_OIDC_JWKS: ""
   _AZURE_OPENAI_DEPLOYMENT: ""
+  _SORABEL_URL_MCP: ""
 
 options:
   logging: CLOUD_LOGGING_ONLY
