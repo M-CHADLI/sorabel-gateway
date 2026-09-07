@@ -125,6 +125,65 @@ def test_un_refus_est_journalise_comme_un_appel(tmp_path, monkeypatch):
     assert ligne["statut"] == "non_autorise"
 
 
+def test_le_perimetre_est_resolu_a_chaque_appel(tmp_path):
+    """Le cœur de la tâche : `resolveur_perimetre` doit être invoqué à CHAQUE appel, pas
+    mémoïsé au premier. En HTTP un même processus sert des profils successifs sur la même
+    instance de serveur ; mémoïser figerait le périmètre du premier appelant pour tous les
+    suivants (un support hériterait alors des droits d'un admin). On le prouve en faisant
+    varier le périmètre renvoyé entre deux appels du même tool : le premier doit passer,
+    le second — avec un profil sans le droit — doit être refusé."""
+    chemin_gouvernance = tmp_path / "gouvernance.db"
+    peupler(chemin_gouvernance)
+    matrice = charger_matrice(chemin_gouvernance)
+    # commercial a le droit d'appeler check_stock, dev ne l'a pas (cf. tests ci-dessus).
+    perimetres = iter([Perimetre("commercial", matrice), Perimetre("dev", matrice)])
+    mcp = FastMCP(name="test-perimetre-varie")
+    enregistrer_tools(mcp, lambda: next(perimetres))
+
+    premier = asyncio.run(mcp.call_tool("check_stock", {"ref": "REF-1024"}))
+    second = asyncio.run(mcp.call_tool("check_stock", {"ref": "REF-1024"}))
+
+    assert json.loads(premier[0].text)["statut"] != "non_autorise"
+    assert json.loads(second[0].text)["statut"] == "non_autorise"
+
+
+def test_un_resolveur_qui_leve_est_traite_fail_closed(tmp_path, monkeypatch):
+    """Quand l'identité HTTP est absente ou expirée, `resolveur_perimetre()` lève : c'est la
+    surface d'attaque introduite par le passage en HTTP. Le décorateur doit répondre par un
+    refus normal (pas une exception qui remonterait au client) et journaliser ce refus."""
+    chemin_journal = tmp_path / "appels.jsonl"
+    monkeypatch.setattr(journal, "CHEMIN_JOURNAL", chemin_journal)
+
+    def _resolveur_qui_leve():
+        raise RuntimeError("jeton expiré")
+
+    mcp = FastMCP(name="test-resolveur-leve")
+    enregistrer_tools(mcp, _resolveur_qui_leve)
+
+    blocs = asyncio.run(mcp.call_tool("check_stock", {"ref": "REF-1024"}))
+    resultat = json.loads(blocs[0].text)
+    assert resultat["statut"] == "non_autorise"
+
+    lignes = chemin_journal.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lignes) == 1
+    ligne = json.loads(lignes[0])
+    assert ligne["tool"] == "check_stock"
+    assert ligne["profil"] == "inconnu"
+    assert ligne["autorise"] is False
+
+
+def test_le_schema_expose_ne_contient_jamais_perimetre(tmp_path):
+    """`perimetre` est injecté par `_gouverne`, jamais fourni par l'appelant : s'il fuitait
+    dans le schéma exposé, un client MCP croirait devoir le renseigner lui-même. Vérifié via
+    l'API publique (list_tools/inputSchema), pas via le gestionnaire de tools interne."""
+    mcp = _construire("admin", tmp_path)
+    outils = asyncio.run(mcp.list_tools())
+    assert len(outils) == 8
+    for outil in outils:
+        proprietes = outil.inputSchema.get("properties", {})
+        assert "perimetre" not in proprietes
+
+
 class _PerimetreFactice:
     """Le contrôle passe du démarrage à la requête : c'est le changement structurel du
     passage en HTTP. Un processus ne sert plus un profil unique."""
@@ -146,24 +205,15 @@ class _PerimetreFactice:
         return frozenset()
 
 
-def test_les_huit_tools_sont_enregistres_quel_que_soit_le_profil():
-    from mcp.server.fastmcp import FastMCP
-    from mcp_server.tools import enregistrer_tools
-
-    mcp = FastMCP(name="test")
-    enregistrer_tools(mcp, lambda: _PerimetreFactice("dev", {"search_docs"}))
-    noms = {outil.name for outil in mcp._tool_manager.list_tools()}
-    assert len(noms) == 8
-
-
 @pytest.mark.anyio
 async def test_un_tool_hors_perimetre_renvoie_non_autorise_et_est_journalise(monkeypatch):
     from mcp.server.fastmcp import FastMCP
     from mcp_server.tools import enregistrer_tools
-    import gouvernance.journal as journal
 
     traces = []
-    monkeypatch.setattr(journal, "journaliser", lambda **kw: traces.append(kw))
+    # tools.py importe `journaliser` par son nom (from gouvernance.journal import
+    # journaliser) : patcher gouvernance.journal.journaliser ne change rien à la référence
+    # déjà liée dans mcp_server.tools, seul le patch du module appelant a un effet.
     import mcp_server.tools as tools_module
     monkeypatch.setattr(tools_module, "journaliser", lambda **kw: traces.append(kw))
 
