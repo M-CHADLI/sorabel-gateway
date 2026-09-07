@@ -1,5 +1,7 @@
 """Construction du serveur MCP : résolution du profil (SEUL point dépendant du transport),
-chargement et validation de la matrice au démarrage."""
+chargement et validation de la matrice au démarrage. Depuis la Task 4, l'enregistrement des
+tools n'est plus filtré par profil (cf. mcp_server.tools) : ce fichier ne teste donc plus le
+filtrage de tools/list, seulement la résolution du profil et la validation de la matrice."""
 
 import asyncio
 
@@ -21,7 +23,10 @@ def test_resoudre_profil_lit_la_variable_denvironnement(monkeypatch):
     assert resoudre_profil() == "commercial"
 
 
-def test_construire_serveur_enregistre_les_bons_tools(tmp_path, monkeypatch):
+def test_construire_serveur_enregistre_toujours_les_huit_tools(tmp_path, monkeypatch):
+    """Depuis la Task 4, l'enregistrement n'est plus filtré par profil : les 8 tools sont
+    toujours enregistrés, et c'est le décorateur de mcp_server.tools qui refuse à l'appel
+    (ask_database reste hors de portée du profil dev, mais le tool existe désormais)."""
     chemin_gouvernance = tmp_path / "gouvernance.db"
     peupler(chemin_gouvernance)
     monkeypatch.setenv("SORABEL_PROFIL", "dev")
@@ -29,8 +34,9 @@ def test_construire_serveur_enregistre_les_bons_tools(tmp_path, monkeypatch):
     mcp = construire_serveur(chemin_gouvernance_db=chemin_gouvernance)
 
     noms = {t.name for t in asyncio.run(mcp.list_tools())}
-    assert "ask_database" not in noms
+    assert "ask_database" in noms
     assert "search_docs" in noms
+    assert len(noms) == 8
 
 
 def test_construire_serveur_profil_inconnu_leve(tmp_path, monkeypatch):

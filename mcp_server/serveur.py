@@ -36,7 +36,10 @@ def construire_serveur(chemin_gouvernance_db: Path = CHEMIN_GOUVERNANCE_DB) -> F
     matrice = charger_matrice(chemin_gouvernance_db)
     perimetre = Perimetre(resoudre_profil(), matrice)
     mcp = FastMCP(name="sorabel-data-gateway")
-    enregistrer_tools(mcp, perimetre)
+    # enregistrer_tools attend désormais un résolveur, appelé à chaque requête (Task 4) :
+    # en stdio le périmètre est déjà fixé au démarrage, donc une fermeture triviale suffit.
+    # L'adaptation complète (résolution depuis le jeton HTTP) est du ressort de la Task 5.
+    enregistrer_tools(mcp, lambda: perimetre)
     return mcp
 
 
