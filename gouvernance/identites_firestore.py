@@ -7,13 +7,18 @@ Build sans le moindre secret.
 La liste des profils valides est passée à la construction, extraite de la matrice figée
 dans l'image : Firestore ne connaît pas la matrice, et on n'écrit pas une identité qui
 pointerait vers un profil inexistant.
+
+`profils_valides` est un paramètre obligatoire, sans valeur par défaut : un dépôt construit
+sans cet ensemble ne doit jamais accepter silencieusement n'importe quelle chaîne comme
+profil (fail-open). Si l'appelant passe un ensemble vide, la validation reste active et
+refuse alors tous les profils (fail-closed), au lieu de les accepter tous.
 """
 
 from __future__ import annotations
 
 
 class DepotIdentitesFirestore:
-    def __init__(self, client, collection: str = "identites", profils_valides=frozenset()):
+    def __init__(self, client, profils_valides, collection: str = "identites"):
         self._collection = client.collection(collection)
         self._profils_valides = frozenset(profils_valides)
 
@@ -24,7 +29,7 @@ class DepotIdentitesFirestore:
         return (instantane.to_dict() or {}).get("profil")
 
     def attribuer(self, sujet: str, profil: str, source: str) -> None:
-        if self._profils_valides and profil not in self._profils_valides:
+        if profil not in self._profils_valides:
             raise ValueError(f"profil inconnu : {profil!r}")
         # `set` sans merge : changer de profil réécrit le document entier, comme le
         # INSERT OR REPLACE de l'implémentation SQLite.

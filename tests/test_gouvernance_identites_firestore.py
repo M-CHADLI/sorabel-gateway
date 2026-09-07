@@ -73,3 +73,14 @@ def test_attribuer_deux_fois_remplace_le_profil(depot):
 def test_profil_inexistant_est_refuse(depot):
     with pytest.raises(ValueError, match="profil inconnu"):
         depot.attribuer("sub-123", "directeur", source="demo")
+
+
+def test_profils_valides_vide_refuse_tout_profil_fail_closed():
+    """profils_valides est obligatoire : un ensemble vide ne désactive pas la validation,
+    elle doit au contraire refuser tous les profils — y compris ceux qui seraient valides
+    ailleurs — plutôt que de tous les accepter (l'ancien défaut fail-open)."""
+    depot_ferme = DepotIdentitesFirestore(_ClientFactice(), profils_valides=frozenset())
+    with pytest.raises(ValueError, match="profil inconnu"):
+        depot_ferme.attribuer("sub-123", "support", source="demo")
+    with pytest.raises(ValueError, match="profil inconnu"):
+        depot_ferme.attribuer("sub-123", "commercial", source="demo")
