@@ -21,23 +21,26 @@ répète pas son contenu : il donne les conventions de travail.
 
 ## État
 
-Les six phases sont livrées : ingestion, RAG hybride, Text-to-SQL, gouvernance, serveur MCP,
-front Streamlit. **117 tests** passent (`python -m pytest -q`).
+Les six phases applicatives sont livrées : ingestion, RAG hybride, Text-to-SQL, gouvernance,
+serveur MCP, front Streamlit. Le chantier `gcp-vitrine` les a ensuite mises en état de
+production sur GCP : transport HTTP, authentification OAuth 2.1, identités Firestore, image
+Docker, CI/CD Cloud Build (détails dans `docs/EXPLOITATION.md`). **182 tests** passent
+(`python -m pytest -q`).
 
-Reste ouvert : l'évaluation E6 (`eval/run_eval.py` n'existe pas), et la journalisation des
-appels refusés (voir §12 du dossier technique).
+Reste ouvert : l'évaluation E6 (`eval/run_eval.py` n'existe pas — voir §12 du dossier
+technique).
 
 ## Commandes
 
 ```bash
 uv sync                                   # Python 3.12, voir .python-version
-python -m pytest -q                       # 117 tests
+python -m pytest -q                       # 182 tests
 
 python scripts/seed_gouvernance.py        # gouvernance.db
 python scripts/ingerer.py                 # corpus → data/canonique/
 python scripts/indexer.py                 # canoniques → Chroma + BM25
 
-SORABEL_PROFIL=commercial python -m mcp_server.serveur
+SORABEL_PROFIL=commercial python -m mcp_server.serveur   # serveur MCP, stdio (développement)
 streamlit run front/app_client.py
 ```
 
@@ -58,11 +61,18 @@ projet.
   requête *et* périmètre *et* `LIMIT`. Une seule barrière ne suffit pas. Le joker `SELECT *`
   est un contournement d'E5 déjà rencontré : `_contient_selection_generique()` doit continuer
   de distinguer le joker, `COUNT(*)` et la multiplication.
-- **Matrice d'accès appliquée à l'entrée du serveur et dans chaque tool** ; tout appel abouti
+- **Matrice d'accès appliquée à chaque appel de tool, refus compris dans le journal.** Le
+  décorateur `_gouverne` (`mcp_server/tools.py`) résout le périmètre et vérifie le droit à
+  chaque requête. En HTTP (production), c'est lui l'intercepteur d'entrée : les 8 tools sont
+  toujours enregistrés, et le profil se lit dans le jeton à chaque appel — `tools/list` ne
+  filtre plus rien. En stdio (développement local), le comportement historique subsiste : un
+  processus sert un seul profil figé au démarrage (`SORABEL_PROFIL`), et un tool hors
+  périmètre n'est jamais enregistré. Dans les deux cas, tout appel — autorisé ou refusé —
   est journalisé.
 - **Le front n'applique aucune règle d'accès.** Il reflète ce que le serveur lui a laissé
-  voir. Ne pas réintroduire de chemin d'accès direct au pipeline : une page de debug qui
-  contournait la gouvernance a existé et a été retirée.
+  voir : `front/depot.py::tools_accordes()` lit la matrice directement, plus jamais
+  `tools/list`. Ne pas réintroduire de chemin d'accès direct au pipeline : une page de debug
+  qui contournait la gouvernance a existé et a été retirée.
 - **Le gain de l'hybride doit être mesuré** (E6) sur `eval/questions_rag.jsonl`, questions par
   référence exacte et en langage naturel **rapportées séparément** — une moyenne globale
   masque ce qu'on cherche à démontrer. Métriques : Recall@5, MRR, Hit@1.
@@ -82,6 +92,18 @@ recalibrer `SEUIL_REFUS`.
 ils reçoivent un objet à quatre méthodes (`peut_appeler`, `collections_autorisees`,
 `tables_autorisees`, `colonnes_interdites`). Toute méthode ajoutée doit l'être aux doublures
 de test.
+
+**Variables d'environnement** — `SORABEL_TRANSPORT` : `stdio` par défaut (développement,
+tests, `scripts/mcp_client.py`) ou `http` (streamable, production). `SORABEL_JOURNAL` :
+`stdout` bascule le journal vers Cloud Logging au lieu de `logs/appels.jsonl` (production).
+`SORABEL_DEPOT` : `firestore` choisit `gouvernance/identites_firestore.py` (production),
+toute autre valeur (ou absence) reste sur `gouvernance/identites.py` (SQLite). Front :
+`SORABEL_URL_MCP`, où joindre le serveur MCP déployé (`front/passerelle.py`).
+Authentification HTTP (`mcp_server/authentification.py`) : `SORABEL_OIDC_ISSUER` /
+`SORABEL_OIDC_AUDIENCE` / `SORABEL_OIDC_JWKS` pour les clients MCP tiers (Google Identity
+Platform), `SORABEL_IAP_AUDIENCE` pour l'assertion relayée par le front derrière
+Identity-Aware Proxy, `SORABEL_URL_PUBLIQUE` pour les métadonnées de ressource protégée du
+serveur lui-même.
 
 **Windows** — deux pièges déjà payés dans `front/mcp_client.py`, à ne pas réintroduire : la
 politique `WindowsProactorEventLoopPolicy` est nécessaire pour lancer un sous-processus, et

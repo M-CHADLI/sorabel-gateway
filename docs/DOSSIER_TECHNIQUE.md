@@ -5,8 +5,10 @@ Point d'entrée unique pour reprendre le code. Ce fichier décrit **ce qui est e
 alternatives écartées restent dans `docs/conception.md` ; le cahier des charges dans
 `BRIEF.md`.
 
-État au 4 septembre 2026 : chantiers RAG, Text-to-SQL, gouvernance, serveur MCP et front
-livrés — 117 tests au vert. L'évaluation E6 n'est pas écrite (§11).
+État au 7 septembre 2026 : chantiers RAG, Text-to-SQL, gouvernance, serveur MCP et front
+livrés, puis mis en état de production sur GCP (transport HTTP, authentification OAuth 2.1,
+identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **182 tests** au
+vert. L'évaluation E6 n'est pas écrite (§11).
 
 ---
 
@@ -15,19 +17,28 @@ livrés — 117 tests au vert. L'évaluation E6 n'est pas écrite (§11).
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  CLIENTS                                                                     │
-│  front/app_client.py (Streamlit)   scripts/mcp_client.py (CLI)   IDE, bots    │
+│  front/app_client.py (Streamlit, via front/passerelle.py en HTTP)            │
+│  scripts/mcp_client.py (CLI, stdio)   client MCP tiers (OIDC)   IDE, bots    │
 └───────────────────────────────┬──────────────────────────────────────────────┘
-                                │  MCP / stdio  —  1 processus serveur = 1 profil
+                                │  stdio (dev)  ou  HTTP streamable (prod)
+                                │  SORABEL_TRANSPORT choisit le mode
 ┌───────────────────────────────▼──────────────────────────────────────────────┐
 │  mcp_server/serveur.py                                                       │
-│    resoudre_profil()      SORABEL_PROFIL  (seul point lié au transport)      │
-│    charger_matrice()      valide la matrice AVANT d'exposer quoi que ce soit │
-│    Perimetre(profil, matrice)                                                │
+│    stdio : resoudre_profil_stdio()  SORABEL_PROFIL, profil figé au           │
+│            démarrage (développement, tests, scripts/mcp_client.py)           │
+│    http  : VerificateurJeton (Resource Server OAuth 2.1 ; IAP +              │
+│            Identity Platform), puis resoudre_profil_http() : lit le          │
+│            profil dans le dépôt d'identités, À CHAQUE REQUÊTE, depuis        │
+│            le sujet du jeton vérifié                                         │
+│    charger_matrice()  valide la matrice AVANT d'exposer quoi que ce soit     │
 │                                                                              │
 │  mcp_server/tools.py                                                         │
-│    enregistrer_tools()    n'enregistre QUE les tools que le profil peut      │
-│                           appeler → tools/list filtré = barrière d'entrée    │
-│    @_avec_journalisation  point de passage unique : durée + statut + journal │
+│    enregistrer_tools()  enregistre TOUJOURS les 8 tools, quel que            │
+│                         soit le transport ou le profil appelant              │
+│    @_gouverne  point de passage unique : résout le Perimetre,                │
+│                vérifie le droit, journalise — À CHAQUE APPEL, refus          │
+│                compris. C'est désormais lui l'intercepteur d'entrée,         │
+│                plus tools/list.                                              │
 └──────┬─────────────────────────────────────────────┬─────────────────────────┘
        │ 4 tools documentaires                       │ 4 tools données
 ┌──────▼───────────────────────────────┐  ┌──────────▼─────────────────────────┐
@@ -52,11 +63,18 @@ livrés — 117 tests au vert. L'évaluation E6 n'est pas écrite (§11).
 
 Deux principes qui expliquent la forme du reste :
 
-- **Un processus serveur ne sert qu'un seul profil**, résolu une fois au démarrage. Il n'y a
-  donc pas d'intercepteur à écrire : un tool hors périmètre n'est jamais enregistré, donc
-  structurellement inappelable.
+- **Le périmètre est résolu par requête, pas au démarrage.** En stdio (développement, tests,
+  `scripts/mcp_client.py`), `SORABEL_PROFIL` fige un profil pour toute la durée du processus —
+  le comportement historique subsiste, inchangé, pour cet usage local. En HTTP (production),
+  un même processus sert tous les profils : les 8 tools sont donc **toujours** enregistrés, et
+  c'est le décorateur `_gouverne` (`mcp_server/tools.py`) qui résout le `Perimetre` à chaque
+  appel — depuis le sujet du jeton vérifié par `VerificateurJeton` — vérifie le droit et
+  journalise, refus compris. `tools/list` filtré n'est donc plus l'intercepteur d'entrée : il
+  renvoie les mêmes 8 tools à tout appelant HTTP, autorisé ou non.
 - **Le front n'applique aucune règle d'accès.** Il affiche ce que le serveur lui a laissé
-  voir. Toute la gouvernance est côté serveur.
+  voir : `front/depot.py::tools_accordes()` lit la matrice directement (plus jamais
+  `tools/list`, qui ne dit plus rien de ce qu'un profil peut appeler depuis que le contrôle
+  est descendu dans le décorateur). Toute la gouvernance reste côté serveur.
 
 ---
 
@@ -89,25 +107,40 @@ gouvernance/
   seed.py            peuple gouvernance.db — la matrice est ici, en clair
   modeles.py         validation Pydantic de la matrice (E5 bloquante)
   perimetre.py       Perimetre : les droits sous la forme que les tools consomment
-  journal.py         journaliser() → logs/appels.jsonl
+  journal.py         journaliser() → logs/appels.jsonl, ou stdout si SORABEL_JOURNAL=stdout
+  identites.py       DepotIdentitesSqlite : sujet → profil, développement et tests
+  identites_firestore.py  DepotIdentitesFirestore : sujet → profil, production
+  depots.py          choisir_depot() : SQLite ou Firestore selon SORABEL_DEPOT — point de
+                     passage unique partagé par mcp_server/serveur.py et front/depot.py
 
 mcp_server/
-  serveur.py         résolution du profil, construction, run stdio
-  tools.py           enregistrement conditionnel des 8 tools + journalisation
+  serveur.py         construction du serveur ; résolution du profil (stdio au démarrage,
+                     HTTP par requête) ; run stdio ou HTTP streamable selon SORABEL_TRANSPORT
+  tools.py           enregistrement inconditionnel des 8 tools ; décorateur `_gouverne` :
+                     résolution du périmètre, contrôle et journalisation à chaque appel
+  authentification.py  VerificateurJeton : Resource Server OAuth 2.1, IAP + Google Identity
+                     Platform, audience vérifiée par émetteur (transport HTTP uniquement)
 
 front/
-  app_client.py      poste de travail (navigation 2 niveaux, 8 écrans)
-  mcp_client.py      session MCP persistante par profil, thread + asyncio
+  app_client.py      poste de travail (navigation 2 niveaux, 8 écrans, inscription et
+                     changement de profil de démonstration)
+  passerelle.py      pont HTTP vers le serveur MCP déployé : relaie l'assertion IAP sans la
+                     vérifier, traduit les pannes de transport en `{"statut": "erreur"}`
+  depot.py           choix du dépôt d'identités (via gouvernance.depots) et calcul des tools
+                     accordés à un profil, lus directement dans la matrice
+  mcp_client.py      pont stdio historique — inchangé, conservé pour le développement local
 
 scripts/
   ingerer.py         corpus → data/canonique/*.json
   indexer.py         canoniques → Chroma + BM25
   seed_gouvernance.py  (re)construit gouvernance.db
-  mcp_client.py       client CLI, un appel de tool par exécution
+  mcp_client.py       client CLI, un appel de tool par exécution, stdio
+  demo_mcp_http.py    serveur MCP HTTP de démonstration SANS authentification — hors
+                     périmètre de production, voir §14
 
-tests/               22 fichiers, 117 tests
+tests/               26 fichiers, 182 tests
 data/                corpus, sorabel.db, canonique/, chroma/  (hors git)
-logs/appels.jsonl    journal d'appels (hors git)
+logs/appels.jsonl    journal d'appels en stdio (hors git) ; en HTTP, voir SORABEL_JOURNAL
 ```
 
 ---
@@ -297,15 +330,29 @@ lire des documents, mais ni générer une réponse ni interroger la base.
    un validateur rend **E5 bloquante** : si un profil restreint voit une table sensible sans
    exclure les colonnes qui vont avec, le chargement lève. L'invariant est vérifié, pas
    espéré.
-2. **À l'entrée** — `enregistrer_tools()` n'enregistre que les tools autorisés. `tools/list`
-   filtré **est** l'intercepteur.
-3. **Dans chaque tool** — le `Perimetre` est passé aux fonctions métier, qui filtrent
-   collections, tables et colonnes.
+2. **À la résolution du profil** — dépend du transport. En stdio, `SORABEL_PROFIL` fige le
+   profil au démarrage, comme avant. En HTTP, `authentification.VerificateurJeton` valide le
+   jeton (signature, émetteur, audience, expiration) puis `resoudre_profil_http()` interroge
+   le **dépôt d'identités** — `gouvernance/identites.py` (SQLite, développement) ou
+   `gouvernance/identites_firestore.py` (Firestore, production), choisi par
+   `gouvernance/depots.py::choisir_depot()` selon `SORABEL_DEPOT` — pour obtenir le profil
+   associé au sujet du jeton. Un sujet authentifié mais inconnu du dépôt n'obtient **aucun**
+   profil par défaut (fail-closed) : c'est au front de proposer l'inscription, jamais au
+   serveur d'en attribuer un. `DepotIdentitesFirestore` ajoute une garantie : construit sans
+   `profils_valides`, il refuserait tout, pas l'inverse.
+3. **À chaque appel de tool** — le décorateur `_gouverne` (`mcp_server/tools.py`) résout le
+   `Perimetre` (via le résolveur ci-dessus), vérifie `peut_appeler()` et journalise, refus
+   compris — c'est le point de passage unique, appelé sur les 8 tools qui sont désormais
+   **toujours** enregistrés. À l'intérieur des fonctions métier, ce même `Perimetre` filtre
+   encore collections, tables et colonnes.
 
-**Journal** — `logs/appels.jsonl`, une ligne JSON par appel, en ajout seul. Le décorateur
-`_avec_journalisation` est le point de passage unique : durée, statut, entrées, SQL, nombre
-de lignes, motif. On trace **la question et la requête, jamais le contenu des résultats** :
-un journal ne doit pas devenir une copie de la base sans les contrôles d'accès de la base.
+**Journal** — `logs/appels.jsonl` par défaut, ou la sortie standard (Cloud Logging) si
+`SORABEL_JOURNAL=stdout` (`gouvernance/journal.py`) ; une ligne JSON par appel dans les deux
+cas. Le décorateur `_gouverne` est le point de passage unique : durée, statut, entrées, SQL,
+nombre de lignes, motif, et **`autorise` : un refus est journalisé au même titre qu'un appel
+abouti**, avec `autorise=False`. On trace **la question et la requête, jamais le contenu des
+résultats** : un journal ne doit pas devenir une copie de la base sans les contrôles d'accès
+de la base.
 
 ---
 
@@ -335,14 +382,33 @@ fonctions de date SQLite sur du texte.
 ## 9. Front
 
 `front/app_client.py` — poste de travail. Navigation à deux niveaux : 4 thèmes, 8 écrans,
-un écran par capacité. Une entrée n'apparaît que si le serveur a accordé le tool
-correspondant.
+un écran par capacité, plus un écran d'inscription pour un sujet encore inconnu du dépôt
+d'identités. Une entrée n'apparaît que si la matrice accorde le tool correspondant au profil
+courant. Un bandeau « mode démonstration » rappelle explicitement qu'un visiteur choisit
+lui-même son profil — ce que la production réelle ne ferait jamais.
 
-`front/mcp_client.py` — **le point délicat**. Streamlit ré-exécute le script à chaque
-interaction : une session MCP ouverte dans le fil du script ne survivrait pas au clic
-suivant, et chaque question rechargerait tout le pipeline. La session est donc tenue par un
-**thread dédié avec sa propre boucle asyncio**, ouverte via une `AsyncExitStack` conservée en
-attribut. Deux pièges Windows déjà payés, à ne pas réintroduire :
+`front/passerelle.py` — le pont vers le serveur MCP déployé, **désormais le seul chemin
+emprunté par `app_client.py`**. Identity-Aware Proxy authentifie la personne avant que la
+requête n'atteigne Streamlit et dépose une assertion signée dans un en-tête ;
+`assertion_iap()` la lit, `sujet_du_jeton()` en extrait le `sub` **sans vérifier la
+signature** — le front n'est pas juge, c'est le serveur MCP qui valide et décide. La
+passerelle recopie l'assertion telle quelle vers le serveur (`Authorization: Bearer …`) :
+Streamlit ne fabrique et ne manipule jamais de secret d'identité. `_executer()` traduit les
+pannes de transport (délai dépassé, connexion refusée) en `{"statut": "erreur", ...}`, jamais
+confondu avec `{"statut": "non_autorise", ...}` réservé à l'absence d'identité.
+
+`front/depot.py` — choisit le dépôt d'identités via `gouvernance.depots.choisir_depot()`
+(mis en cache par process, `SORABEL_DEPOT` déjà résolu une fois) et calcule
+`tools_accordes(profil)` **en lisant la matrice directement**, plus jamais via `tools/list` :
+depuis que le périmètre est résolu par requête (§1, §7), `tools/list` renvoie les 8 tools à
+tout appelant HTTP et ne dit donc plus rien de ce qu'un profil peut réellement appeler.
+
+`front/mcp_client.py` — le pont stdio historique, **inchangé**, conservé pour le
+développement local (il n'est plus importé par `app_client.py`, qui ne parle qu'à
+`front/passerelle.py`). Streamlit ré-exécute le script à chaque interaction : une session MCP
+ouverte dans le fil du script ne survivrait pas au clic suivant. La session y est donc tenue
+par un **thread dédié avec sa propre boucle asyncio**, ouverte via une `AsyncExitStack`
+conservée en attribut. Deux pièges Windows déjà payés, à ne pas réintroduire dans ce fichier :
 
 - `WindowsProactorEventLoopPolicy` est imposée : la politique Selector ne sait pas créer de
   sous-processus, et le serveur meurt silencieusement.
@@ -351,9 +417,9 @@ attribut. Deux pièges Windows déjà payés, à ne pas réintroduire :
   plus (`OSError: [WinError 10106]`).
 
 Il n'existe **aucun chemin d'accès au pipeline qui contourne le serveur MCP** : tout ce que
-le front affiche est passé par la matrice. Une page de debug appelant les modules en direct
-a existé (`front/app.py`) et a été retirée — dans un projet dont l'argument est la
-gouvernance, un contournement disponible finit par servir.
+le front affiche est passé par la matrice, via `front/passerelle.py`. Une page de debug
+appelant les modules en direct a existé (`front/app.py`) et a été retirée — dans un projet
+dont l'argument est la gouvernance, un contournement disponible finit par servir.
 
 ---
 
@@ -371,16 +437,22 @@ python scripts/seed_gouvernance.py        # construit gouvernance.db
 python scripts/ingerer.py                 # corpus → data/canonique/
 python scripts/indexer.py                 # canoniques → Chroma + BM25
 
-SORABEL_PROFIL=commercial python -m mcp_server.serveur   # serveur MCP stdio
+SORABEL_PROFIL=commercial python -m mcp_server.serveur   # serveur MCP, stdio (développement)
 streamlit run front/app_client.py                        # poste de travail
 python scripts/mcp_client.py support answer_question '{"question": "..."}'
 
-python -m pytest -q                       # 117 tests
+python -m pytest -q                       # 182 tests
 ```
 
 Changer `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` **impose de réindexer tout le corpus** : des
 vecteurs de deux modèles ne se comparent pas. Changer le modèle de reranking impose de
 recalibrer `SEUIL_REFUS`.
+
+En transport HTTP (production), le serveur exige en plus l'authentification et le dépôt
+d'identités — `SORABEL_TRANSPORT=http`, `SORABEL_OIDC_ISSUER`/`_AUDIENCE`/`_JWKS`,
+`SORABEL_IAP_AUDIENCE`, `SORABEL_URL_PUBLIQUE`, `SORABEL_DEPOT=firestore` — voir `CLAUDE.md`
+pour la liste complète des variables et `docs/EXPLOITATION.md` pour le provisionnement GCP et
+les commandes de vérification.
 
 ---
 
@@ -391,7 +463,7 @@ recalibrer `SEUIL_REFUS`.
 | **E1** | Refus hors corpus déterministe, citations non hallucinées | `recherche.SEUIL_REFUS`, `generation._construire_citations` | `test_generation.py` |
 | **E2** | RAG hybride dense + BM25 + rerank | `index.py`, `recherche.rechercher` | `test_recherche_collections.py` |
 | **E3** | SQL lecture seule, barrières multiples, SQL toujours visible | `validation.py`, `execution.py` | `test_sql_validation.py`, `test_sql_execution.py` |
-| **E4** | Matrice d'accès appliquée et journalisée | `perimetre.py`, `tools.enregistrer_tools`, `journal.py` | `test_gouvernance_*.py`, `test_mcp_tools.py` |
+| **E4** | Matrice d'accès appliquée et journalisée, refus compris | `perimetre.py`, `tools.enregistrer_tools` (décorateur `_gouverne`), `authentification.py`, `journal.py` | `test_gouvernance_*.py`, `test_mcp_tools.py`, `test_mcp_authentification.py` |
 | **E5** | Colonnes sensibles jamais exposées au profil restreint | validateur Pydantic, `valider()`, `schema_commente()` | `test_gouvernance_modeles.py`, `test_sql_validation.py` |
 | **E6** | Gain de l'hybride mesuré et documenté | **non fait** | — |
 
@@ -399,7 +471,7 @@ recalibrer `SEUIL_REFUS`.
 
 ## 12. Limites connues et reste à faire
 
-Deux points qu'un repreneur doit connaître, plutôt que les redécouvrir :
+Un point qu'un repreneur doit connaître, plutôt que le redécouvrir :
 
 1. **E6 n'est pas implémentée.** `eval/questions_rag.jsonl` et `eval/questions_sql.jsonl`
    existent, `eval/run_eval.py` non. Il faut mesurer Recall@5, MRR et Hit@1 sur les trois
@@ -408,22 +480,36 @@ Deux points qu'un repreneur doit connaître, plutôt que les redécouvrir :
    rapportées séparément** : une moyenne globale masque précisément ce qu'on cherche à
    démontrer.
 
-2. **Le journal ne trace que les appels autorisés.** Le décorateur passe `autorise=True` en
-   dur, et un tool non accordé n'est pas enregistré, donc son appel n'atteint jamais de code
-   journalisant. Le refus est structurel — c'est solide — mais le brief demande de tracer
-   « tout appel, autorisé comme refusé ». Un refus reste invisible dans `appels.jsonl`. Pour
-   le combler : journaliser au niveau du serveur les `tools/call` sur un nom non enregistré.
+**Comblé pendant le chantier `gcp-vitrine`** — le point qui figurait ici avant lui :
+
+- **Le journal trace désormais les refus.** Le décorateur `_gouverne` journalise
+  `autorise=False` avant même de résoudre le `Perimetre`, et sur tout appel qui échoue à
+  `peut_appeler()` — possible depuis que les 8 tools sont toujours enregistrés (§1, §7) :
+  en stdio, un tool non accordé n'existait pas et son appel n'atteignait donc jamais de code
+  journalisant ; ce n'est plus le cas en HTTP.
+
+Un bug bloquant, sans rapport avec les limites listées ci-dessus, a par ailleurs été trouvé
+et corrigé pendant la vérification finale du chantier (hors des tâches planifiées, découvert
+en confrontant le code à la conception) : `construire_serveur()` n'appelait jamais
+`choisir_depot()` malgré `SORABEL_DEPOT=firestore` — le serveur serait resté sur
+l'implémentation SQLite en production, où le fichier `gouvernance.db` n'est pas accessible en
+écriture, rendant l'auto-inscription du front inopérante (refus indéfini pour tout nouveau
+sujet). Corrigé ; `tests/test_mcp_serveur.py` couvre désormais les deux dépôts.
 
 ---
 
 ## 13. Démonstration en 5 minutes
 
 La séquence qui montre le plus en le moins de temps, chaque étape s'appuyant sur la
-précédente.
+précédente. Décrite ici avec `scripts/mcp_client.py --profil …` contre un serveur stdio
+local ; pour le parcours de démonstration sur le poste de travail Streamlit du déploiement
+GCP réel (IAP, inscription, Firestore), voir `docs/EXPLOITATION.md` §9.
 
-1. **Le même écran, deux profils.** Ouvrir le poste de travail en `commercial`, puis basculer
-   en `dev` : quatre entrées de menu disparaissent. Rien n'est masqué côté page — le serveur
-   n'a pas enregistré les tools.
+1. **Le même échange, deux profils.** Appeler `search_docs` en `commercial`, puis en `dev` :
+   les tools de la base de données (`ask_database`, `get_schema`, `check_stock`,
+   `order_status`) ne sont plus accordés en `dev`. Dans le poste de travail, cela se traduit
+   par quatre entrées de menu qui disparaissent — la matrice les a retirées, la page ne
+   masque rien elle-même.
 2. **Chercher sans générer.** Documentation → « Rechercher un extrait » sur `REF-8842` :
    extraits bruts et scores, sans LLM. Puis « Ouvrir un document » sur le `chunk_id` obtenu.
    Les briques du RAG fonctionnent séparément du tool de haut niveau.
@@ -434,7 +520,17 @@ précédente.
 5. **E5 en direct.** En `support`, Données → « Périmètre accessible » : `prix_achat_ht`,
    `marge_pct` et `marge_ht` sont **absentes du schéma**. Puis demander les marges : refus,
    et le SQL rejeté reste affiché. Rebasculer en `commercial` : la même question aboutit.
-6. **La trace.** `logs/appels.jsonl` : une ligne par appel, avec profil, statut, SQL et durée.
+6. **La trace.** `logs/appels.jsonl` (ou Cloud Logging si `SORABEL_JOURNAL=stdout`) : une
+   ligne par appel, avec profil, statut, SQL et durée — refus compris (`autorise=false`).
+
+---
+
+## 14. Déploiement
+
+La mise en production sur GCP (deux services Cloud Run, image Docker à deux étapes, CI/CD
+Cloud Build, Firestore, OAuth 2.1) est documentée intégralement dans `docs/EXPLOITATION.md` :
+provisionnement pas à pas, variables à renseigner, coûts, et parcours de démonstration une
+fois déployé. Ce fichier-ci ne la duplique pas ; il ne décrit que le code et ses contrats.
 
 ---
 
@@ -445,5 +541,6 @@ précédente.
 | Cahier des charges, tests d'acceptance | `BRIEF.md` |
 | Décisions de conception et alternatives écartées | `docs/conception.md` |
 | Diagrammes Mermaid des trois chantiers | `docs/schemas.md` |
+| Provisionnement GCP et parcours de démonstration en production | `docs/EXPLOITATION.md` |
 | Plans d'exécution par phase (archive datée) | `docs/superpowers/` |
 | Croquis de travail | `docs/croquis/` |
