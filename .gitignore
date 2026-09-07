@@ -9,6 +9,10 @@ data/chroma/
 gouvernance/*.db
 logs/
 
+# Journaux d'outils lancés en local (serveur de démo, ngrok, inspecteur MCP) :
+# jamais un livrable, jamais à committer par accident.
+*.log
+
 # Skills : outillage local de developpement, pas livrable du projet
 .claude/skills/brainstorming/
 .claude/skills/subagent-driven-development/
