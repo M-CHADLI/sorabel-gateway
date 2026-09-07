@@ -74,13 +74,34 @@ async def _appeler_distant(assertion: str, tool: str | None, arguments: dict | N
 
 
 def _executer(coroutine):
-    return asyncio.run(asyncio.wait_for(coroutine, timeout=DELAI))
+    """Exécute l'appel réseau et traduit les pannes de transport en retour normal.
+
+    Une panne (timeout, connexion refusée, DNS en échec) n'est pas un refus d'accès :
+    on ne la confond donc jamais avec `{"statut": "non_autorise", ...}`, réservé à
+    l'absence d'identité. `{"statut": "erreur", ...}` est déjà la convention du projet
+    pour les pannes techniques (voir `front/mcp_client.py`) — on l'applique ici aussi,
+    sans jamais recopier l'assertion dans le message renvoyé à l'appelant.
+    """
+    import httpx
+
+    try:
+        return asyncio.run(asyncio.wait_for(coroutine, timeout=DELAI))
+    except (asyncio.TimeoutError, TimeoutError):
+        return {"statut": "erreur", "message": "Le serveur ne répond pas (délai dépassé)."}
+    except httpx.TransportError:
+        # Englobe ConnectError (connexion refusée, DNS en échec) et ConnectTimeout :
+        # ce sont les exceptions que lève httpx, socle HTTP de streamablehttp_client.
+        return {"statut": "erreur", "message": "Impossible de joindre le serveur MCP."}
 
 
 def lister_tools(assertion: str | None) -> list[str]:
     if not assertion:
         return []
-    return _executer(_appeler_distant(assertion, None, None))
+    resultat = _executer(_appeler_distant(assertion, None, None))
+    # En cas de panne réseau, `_executer` renvoie un dict `{"statut": "erreur", ...}` au
+    # lieu de la liste attendue : liste vide, même comportement que `assertion=None`,
+    # pour ne pas casser le contrat de retour (`list[str]`) de cette fonction.
+    return resultat if isinstance(resultat, list) else []
 
 
 def appeler(assertion: str | None, tool: str, arguments: dict) -> dict:
