@@ -28,9 +28,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import re
 
 import streamlit as st
+from google.api_core.exceptions import GoogleAPICallError
+from google.auth.exceptions import DefaultCredentialsError
 
 from front.depot import depot_identites, tools_accordes
 from front.passerelle import appeler, assertion_iap, sujet_du_jeton
+from gouvernance.perimetre import ProfilInconnu
+
+# Pannes de la couche identité (dépôt SQLite ou Firestore, et matrice) qu'on ne laisse
+# jamais remonter en trace brute à l'écran — voir `page_inscription` et la résolution du
+# profil ci-dessous. `ValueError` couvre un profil désactivé entre-temps dans la matrice ;
+# `ProfilInconnu`, un profil que la matrice ne reconnaît plus ; `RuntimeError`, le dépôt
+# SQLite si `gouvernance.db` est introuvable ; les deux exceptions Google, Firestore
+# injoignable ou credentials absentes.
+ERREURS_IDENTITE = (
+    RuntimeError,
+    ValueError,
+    ProfilInconnu,
+    DefaultCredentialsError,
+    GoogleAPICallError,
+)
 
 st.set_page_config(page_title="Sorabel — Poste commercial", layout="wide")
 
@@ -948,8 +965,16 @@ def page_inscription(sujet: str) -> None:
             st.markdown(f"**{libelle}** — {DESCRIPTIONS_PROFIL[code]}")
         with colonne_action:
             if st.button("Choisir", key=f"choisir_{code}", use_container_width=True):
-                depot_identites().attribuer(sujet, code, source="demo")
-                st.rerun()
+                try:
+                    depot_identites().attribuer(sujet, code, source="demo")
+                except ERREURS_IDENTITE as erreur:
+                    print(f"page_inscription : échec de l'attribution du profil — {erreur!r}")
+                    st.error(
+                        "Impossible d'attribuer ce profil pour le moment. Réessayez, ou "
+                        "signalez l'incident à l'exploitation s'il persiste."
+                    )
+                else:
+                    st.rerun()
 
 
 def _selection(cle: str, valeurs: list[str]) -> str:
@@ -970,12 +995,24 @@ if sujet is None:
     st.info("Session non authentifiée — cette page s'utilise derrière Identity-Aware Proxy.")
     st.stop()
 
-profil = depot_identites().profil_de(sujet)
+try:
+    profil = depot_identites().profil_de(sujet)
+    if profil is not None:
+        tools = tools_accordes(profil)
+except ERREURS_IDENTITE as erreur:
+    # Ni le chemin serveur (`gouvernance.db` introuvable) ni la trace Firestore ne doivent
+    # atteindre l'écran : un refus ou une panne est un retour normal, jamais une exception
+    # qui remonte à l'utilisateur (voir `gouvernance/journal.py`, `front/passerelle.py`).
+    print(f"résolution du profil : échec — {erreur!r}")
+    st.error(
+        "Impossible de déterminer votre profil pour le moment. Réessayez, ou signalez "
+        "l'incident à l'exploitation s'il persiste."
+    )
+    st.stop()
+
 if profil is None:
     page_inscription(sujet)
     st.stop()
-
-tools = tools_accordes(profil)
 
 with st.sidebar:
     st.markdown("### Sorabel Data Gateway")
@@ -1044,13 +1081,21 @@ with st.sidebar:
         )
 
     with st.expander("Changer de profil"):
-        st.caption("Mode démonstration : la bascule est journalisée comme tout appel.")
+        st.caption("Mode démonstration : cette bascule n'existe pas en exploitation réelle.")
         nouveau = st.selectbox(
             "Profil", list(PROFILS), format_func=lambda p: PROFILS[p][0], key="bascule"
         )
         if st.button("Appliquer", key="btn_bascule") and nouveau != profil:
-            depot_identites().attribuer(sujet, nouveau, source="demo")
-            st.rerun()
+            try:
+                depot_identites().attribuer(sujet, nouveau, source="demo")
+            except ERREURS_IDENTITE as erreur:
+                print(f"changement de profil : échec — {erreur!r}")
+                st.error(
+                    "Impossible de changer de profil pour le moment. Réessayez, ou "
+                    "signalez l'incident à l'exploitation s'il persiste."
+                )
+            else:
+                st.rerun()
 
 libelle_profil, titre_poste = PROFILS[profil]
 st.markdown(
