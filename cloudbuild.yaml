@@ -1,0 +1,106 @@
+# Chaîne CI/CD Cloud Build : déclenchée sur push vers main.
+#
+# tests -> build (image unique, deux entrypoints) -> push Artifact Registry ->
+# déploiement des deux services Cloud Run (sorabel-mcp, sorabel-front).
+#
+# Les tests sont une barrière : Cloud Build exécute les étapes dans l'ordre et
+# s'arrête à la première en échec, donc un test rouge empêche tout déploiement.
+steps:
+  - id: tests
+    name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -c
+      - pip install --no-cache-dir uv && uv sync --frozen && uv run pytest -q
+
+  # Construit l'image à deux étapes du Dockerfile (tâche 9) : l'étape `index` y
+  # exécute l'ingestion puis l'indexation, qui appellent Azure AI Foundry pour
+  # les embeddings.
+  #
+  # Écart avec la version initiale de ce fichier : le Dockerfile déclare trois
+  # ARG non secrets que l'étape `index` exige pour aboutir — AZURE_EMBEDDING_ENDPOINT,
+  # AZURE_OPENAI_ENDPOINT et AZURE_OPENAI_EMBEDDING_DEPLOYMENT (endpoint et nom de
+  # déploiement : des identifiants de ressource, pas des clés). Ils sont passés en
+  # --build-arg ci-dessous, alimentés par les substitutions du même nom (voir bloc
+  # `substitutions`, valeur vide par défaut). Seule la clé d'API reste un secret,
+  # montée via le mécanisme --secret de BuildKit.
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    secretEnv: [AZURE_EMBEDDING_API_KEY]
+    args:
+      - -c
+      - |
+        echo "$$AZURE_EMBEDDING_API_KEY" > /workspace/cle
+        DOCKER_BUILDKIT=1 docker build \
+          --secret id=azure_embedding_key,src=/workspace/cle \
+          --build-arg AZURE_EMBEDDING_ENDPOINT="$_AZURE_EMBEDDING_ENDPOINT" \
+          --build-arg AZURE_OPENAI_ENDPOINT="$_AZURE_OPENAI_ENDPOINT" \
+          --build-arg AZURE_OPENAI_EMBEDDING_DEPLOYMENT="$_AZURE_OPENAI_EMBEDDING_DEPLOYMENT" \
+          -t "$_IMAGE:$SHORT_SHA" -t "$_IMAGE:latest" .
+        rm /workspace/cle
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, "$_IMAGE"]
+
+  - id: deploy-mcp
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - sorabel-mcp
+      - --image=$_IMAGE:$SHORT_SHA
+      - --region=$_REGION
+      - --service-account=sorabel-mcp@$PROJECT_ID.iam.gserviceaccount.com
+      - --command=python
+      - --args=-m,mcp_server.serveur
+      - --set-env-vars=SORABEL_TRANSPORT=http,SORABEL_JOURNAL=stdout,SORABEL_DEPOT=firestore
+      - --set-secrets=AZURE_OPENAI_API_KEY=azure-openai-key:latest
+      - --min-instances=0
+      - --max-instances=4
+
+  - id: deploy-front
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - sorabel-front
+      - --image=$_IMAGE:$SHORT_SHA
+      - --region=$_REGION
+      - --service-account=sorabel-front@$PROJECT_ID.iam.gserviceaccount.com
+      - --command=streamlit
+      - --args=run,front/app_client.py,--server.port=8080,--server.address=0.0.0.0
+      - --set-env-vars=SORABEL_DEPOT=firestore,SORABEL_JOURNAL=stdout
+      - --session-affinity
+      - --min-instances=0
+      - --max-instances=2
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/azure-embedding-key/versions/latest
+      env: AZURE_EMBEDDING_API_KEY
+
+# _REGION et _IMAGE : région et dépôt Artifact Registry, conformes à la conception
+# (§2 et §7 de docs/superpowers/specs/2026-09-07-sorabel-gcp-vitrine-design.md).
+#
+# _AZURE_EMBEDDING_ENDPOINT, _AZURE_OPENAI_ENDPOINT, _AZURE_OPENAI_EMBEDDING_DEPLOYMENT :
+# comblent l'écart entre ce fichier et le Dockerfile réel (tâche 9) — ce ne sont pas
+# des secrets (identifiants de ressource Azure : URL d'endpoint, nom de déploiement),
+# donc pas de mécanisme --secret BuildKit ni d'entrée Secret Manager, seulement des
+# substitutions, laissées vides ici. À LA TÂCHE 11 (provisionnement GCP) : renseigner
+# ces trois substitutions avec les vraies valeurs Azure AI Foundry dans la
+# configuration du déclencheur Cloud Build — sans quoi l'étape `build` échoue dès
+# l'ingestion (cf. Dockerfile ARG, et sorabel_rag/index.py qui exige un endpoint et
+# un déploiement d'embeddings résolus, sans valeur par défaut).
+substitutions:
+  _REGION: europe-west1
+  _IMAGE: europe-west1-docker.pkg.dev/${PROJECT_ID}/sorabel/gateway
+  _AZURE_EMBEDDING_ENDPOINT: ""
+  _AZURE_OPENAI_ENDPOINT: ""
+  _AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ""
+
+options:
+  logging: CLOUD_LOGGING_ONLY
