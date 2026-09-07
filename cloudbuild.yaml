@@ -56,7 +56,7 @@ steps:
       - --service-account=sorabel-mcp@$PROJECT_ID.iam.gserviceaccount.com
       - --command=python
       - --args=-m,mcp_server.serveur
-      - --set-env-vars=SORABEL_TRANSPORT=http,SORABEL_JOURNAL=stdout,SORABEL_DEPOT=firestore
+      - --set-env-vars=SORABEL_TRANSPORT=http,SORABEL_JOURNAL=stdout,SORABEL_DEPOT=firestore,SORABEL_OIDC_ISSUER=$_SORABEL_OIDC_ISSUER,SORABEL_OIDC_AUDIENCE=$_SORABEL_OIDC_AUDIENCE,SORABEL_URL_PUBLIQUE=$_SORABEL_URL_PUBLIQUE,SORABEL_IAP_AUDIENCE=$_SORABEL_IAP_AUDIENCE,SORABEL_OIDC_JWKS=$_SORABEL_OIDC_JWKS,AZURE_OPENAI_ENDPOINT=$_AZURE_OPENAI_ENDPOINT,AZURE_OPENAI_DEPLOYMENT=$_AZURE_OPENAI_DEPLOYMENT
       - --set-secrets=AZURE_OPENAI_API_KEY=azure-openai-key:latest
       - --min-instances=0
       - --max-instances=4
@@ -95,12 +95,30 @@ availableSecrets:
 # configuration du déclencheur Cloud Build — sans quoi l'étape `build` échoue dès
 # l'ingestion (cf. Dockerfile ARG, et sorabel_rag/index.py qui exige un endpoint et
 # un déploiement d'embeddings résolus, sans valeur par défaut).
+#
+# _SORABEL_OIDC_ISSUER, _SORABEL_OIDC_AUDIENCE, _SORABEL_URL_PUBLIQUE,
+# _SORABEL_IAP_AUDIENCE, _SORABEL_OIDC_JWKS, _AZURE_OPENAI_DEPLOYMENT (et
+# _AZURE_OPENAI_ENDPOINT ci-dessus, réutilisé) : mcp_server/serveur.py accède par
+# crochet (pas .get()) aux variables OIDC/IAP en transport HTTP, et
+# sorabel_llm/client.py exige l'endpoint et le déploiement Azure à la résolution
+# paresseuse — sans valeur, échec immédiat (KeyError) ou échec de toute requête
+# RAG/SQL. Ce ne sont pas des secrets (identifiants de fournisseur d'identité et de
+# ressource Azure, pas des clés), donc de simples substitutions, laissées vides ici :
+# ni Google Identity Platform/IAP ni la ressource Azure de génération ne sont encore
+# provisionnés. À LA TÂCHE 11 (provisionnement GCP réel) : renseigner ces sept
+# substitutions dans la configuration du déclencheur Cloud Build.
 substitutions:
   _REGION: europe-west1
   _IMAGE: europe-west1-docker.pkg.dev/${PROJECT_ID}/sorabel/gateway
   _AZURE_EMBEDDING_ENDPOINT: ""
   _AZURE_OPENAI_ENDPOINT: ""
   _AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ""
+  _SORABEL_OIDC_ISSUER: ""
+  _SORABEL_OIDC_AUDIENCE: ""
+  _SORABEL_URL_PUBLIQUE: ""
+  _SORABEL_IAP_AUDIENCE: ""
+  _SORABEL_OIDC_JWKS: ""
+  _AZURE_OPENAI_DEPLOYMENT: ""
 
 options:
   logging: CLOUD_LOGGING_ONLY
