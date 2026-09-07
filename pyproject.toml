@@ -15,8 +15,10 @@ dependencies = [
     "PyYAML>=6.0",
 
     # Index et recherche
+    # Pas de sentence-transformers : embeddings et reranking sont servis par Azure AI
+    # Foundry depuis la migration hors CPU local. La dependance tirait PyTorch (~2 Go)
+    # sans qu'aucun module ne l'importe.
     "chromadb>=0.5",
-    "sentence-transformers>=3.0",
     "rank-bm25>=0.2.2",
 
     # LLM (Azure AI Foundry)
