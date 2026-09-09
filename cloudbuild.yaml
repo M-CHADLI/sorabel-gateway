@@ -5,6 +5,12 @@
 #
 # Les tests sont une barrière : Cloud Build exécute les étapes dans l'ordre et
 # s'arrête à la première en échec, donc un test rouge empêche tout déploiement.
+#
+# --async sur les deux déploiements : sans lui, `gcloud run deploy` attend que la nouvelle
+# révision devienne saine avant de rendre la main. Or au tout premier passage (amorçage,
+# voir les substitutions _SORABEL_URL_PUBLIQUE / _SORABEL_IAP_AUDIENCE / _SORABEL_URL_MCP
+# ci-dessous), sorabel-mcp ne peut pas encore démarrer sain — sans --async, `deploy-mcp`
+# échouerait et empêcherait `deploy-front` de s'exécuter, cassant le bootstrap.
 steps:
   - id: tests
     name: python:3.12-slim
@@ -60,6 +66,7 @@ steps:
       - --set-secrets=AZURE_OPENAI_API_KEY=azure-openai-key:latest
       - --min-instances=0
       - --max-instances=4
+      - --async
 
   - id: deploy-front
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -77,6 +84,7 @@ steps:
       - --session-affinity
       - --min-instances=0
       - --max-instances=2
+      - --async
 
 availableSecrets:
   secretManager:
