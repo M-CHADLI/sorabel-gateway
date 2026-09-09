@@ -12,12 +12,20 @@
 # ci-dessous), sorabel-mcp ne peut pas encore démarrer sain — sans --async, `deploy-mcp`
 # échouerait et empêcherait `deploy-front` de s'exécuter, cassant le bootstrap.
 steps:
+  # `data/canonique/` est régénérable et gitignorée (voir .gitignore) : un checkout frais
+  # ne l'a jamais eue. L'ingestion est une extraction déterministe sans appel réseau (aucune
+  # référence Azure dans sorabel_rag/ingestion.py) — sûre à exécuter ici, contrairement à
+  # l'indexation (Chroma/BM25), qui appelle les embeddings et reste réservée à l'étape `build`.
   - id: tests
     name: python:3.12-slim
     entrypoint: bash
     args:
       - -c
-      - pip install --no-cache-dir uv && uv sync --frozen && uv run pytest -q
+      - |
+        pip install --no-cache-dir uv
+        uv sync --frozen
+        uv run python scripts/ingerer.py
+        uv run pytest -q
 
   # Construit l'image à deux étapes du Dockerfile (tâche 9) : l'étape `index` y
   # exécute l'ingestion puis l'indexation, qui appellent Azure AI Foundry pour
