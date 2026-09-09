@@ -68,6 +68,13 @@ steps:
       - sorabel-mcp
       - --image=$_IMAGE:$SHORT_SHA
       - --region=$_REGION
+      # sorabel-mcp est un Resource Server OAuth (mcp_server/authentification.py) : c'est
+      # VerificateurJeton qui authentifie chaque appel (assertion IAP relayée par le front,
+      # ou jeton OIDC d'un client tiers), pas l'IAM de Cloud Run. Sans --allow-unauthenticated,
+      # l'IAM de Cloud Run rejette la requête avant qu'elle n'atteigne le conteneur (401 sans
+      # aucune trace applicative) : front/passerelle.py ne transmet qu'un seul jeton, qui ne
+      # peut pas aussi être l'identité IAM que ce garde-barrière attendrait.
+      - --allow-unauthenticated
       - --service-account=sorabel-mcp@$PROJECT_ID.iam.gserviceaccount.com
       - --command=python
       - --args=-m,mcp_server.serveur
