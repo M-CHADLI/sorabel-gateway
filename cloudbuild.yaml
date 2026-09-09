@@ -45,6 +45,7 @@ steps:
     args:
       - -c
       - |
+        set -e
         echo "$$AZURE_EMBEDDING_API_KEY" > /workspace/cle
         DOCKER_BUILDKIT=1 docker build \
           --secret id=azure_embedding_key,src=/workspace/cle \
