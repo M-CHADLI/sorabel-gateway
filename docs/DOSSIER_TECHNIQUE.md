@@ -5,10 +5,15 @@ Point d'entrée unique pour reprendre le code. Ce fichier décrit **ce qui est e
 alternatives écartées restent dans `docs/conception.md` ; le cahier des charges dans
 `BRIEF.md`.
 
-État au 7 septembre 2026 : chantiers RAG, Text-to-SQL, gouvernance, serveur MCP et front
+État au 10 septembre 2026 : chantiers RAG, Text-to-SQL, gouvernance, serveur MCP et front
 livrés, puis mis en état de production sur GCP (transport HTTP, authentification OAuth 2.1,
 identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **182 tests** au
-vert. L'évaluation E6 n'est pas écrite (§11).
+vert. La vitrine a depuis été **provisionnée et vérifiée sur un projet GCP réel**
+(`sorabel-vitrine-2026`) : les deux services tournent, le parcours de démonstration complet
+fonctionne derrière IAP, et un client MCP tiers authentifié par OAuth Google obtient
+effectivement les 8 tools (`scripts/mcp_client_oauth.py`) — voir `docs/EXPLOITATION.md` pour
+le détail des correctifs qu'un déploiement réel a révélés. L'évaluation E6 n'est pas écrite
+(§11).
 
 ---
 
@@ -135,6 +140,8 @@ scripts/
   indexer.py         canoniques → Chroma + BM25
   seed_gouvernance.py  (re)construit gouvernance.db
   mcp_client.py       client CLI, un appel de tool par exécution, stdio
+  mcp_client_oauth.py client MCP tiers authentifié par un vrai flux OAuth Google — preuve
+                     du Resource Server contre un serveur déployé, voir §14 et EXPLOITATION.md
   demo_mcp_http.py    serveur MCP HTTP de démonstration SANS authentification — hors
                      périmètre de production, voir §14
 
@@ -496,6 +503,37 @@ l'implémentation SQLite en production, où le fichier `gouvernance.db` n'est pa
 écriture, rendant l'auto-inscription du front inopérante (refus indéfini pour tout nouveau
 sujet). Corrigé ; `tests/test_mcp_serveur.py` couvre désormais les deux dépôts.
 
+**Ce que le premier provisionnement réel a révélé (2026-09-09/10)** — aucun de ces points
+n'était détectable par les tests, qui tournent sans réseau ni GCP réel ; tous sont désormais
+corrigés dans `cloudbuild.yaml` et documentés dans `docs/EXPLOITATION.md` :
+
+- `deploy-mcp` et `deploy-front` tournaient sans `--async` : `gcloud run deploy` attend par
+  défaut qu'une révision devienne saine avant de rendre la main, ce que `sorabel-mcp` ne peut
+  pas faire au tout premier passage (son URL, nécessaire à sa propre configuration, n'existe
+  qu'une fois déployé). Sans `--async`, ce premier build échouait et n'atteignait jamais
+  `deploy-front`.
+- L'étape `tests` de `cloudbuild.yaml` ne régénérait pas `data/canonique/` (gitignorée,
+  régénérable) avant `pytest` : 14 tests qui lisent les documents canoniques
+  (`get_document`, `list_sources`) échouaient sur un checkout Cloud Build frais, alors qu'ils
+  passent toujours en local où ce dossier existe déjà.
+- L'étape `build` n'avait pas de `set -e` : un `docker build` en échec ne faisait pas échouer
+  le script (le dernier `rm` réussissait et masquait le code de sortie), donc `push` échouait
+  ensuite avec un message qui ne disait rien de la cause réelle.
+- `sorabel-mcp` était déployé sans `--allow-unauthenticated` : l'IAM de Cloud Run rejetait
+  alors la requête du front *avant* qu'elle n'atteigne `VerificateurJeton` (401 sans aucune
+  trace applicative) — `front/passerelle.py` ne relaie qu'un seul jeton (l'assertion IAP),
+  qui ne peut pas aussi être l'identité IAM que l'ancien binding `run.invoker` attendait.
+  `sorabel-mcp` est un vrai Resource Server OAuth : c'est lui, seul, qui doit authentifier.
+- Sur un projet créé après le 19 janvier 2026, IAP ne peut plus provisionner automatiquement
+  son client OAuth (API dépréciée par Google) : activer IAP échoue à l'exécution avec
+  « Empty Google Account OAuth client ID(s)/secret(s) », indépendamment de toute
+  configuration correcte par ailleurs. Contournement documenté en `docs/EXPLOITATION.md` §6.2.
+- Un client OAuth générique (dont MCP Inspector) envoie l'`access_token` opaque de Google
+  comme jeton porteur, jamais l'`id_token` (le vrai JWT que `VerificateurJeton` sait
+  décoder) — un décalage de convention, pas un bug du serveur. `scripts/mcp_client_oauth.py`
+  le contourne en envoyant explicitement l'`id_token`, et sert de preuve que le serveur valide
+  correctement un jeton bien formé.
+
 ---
 
 ## 13. Démonstration en 5 minutes
@@ -528,9 +566,11 @@ GCP réel (IAP, inscription, Firestore), voir `docs/EXPLOITATION.md` §9.
 ## 14. Déploiement
 
 La mise en production sur GCP (deux services Cloud Run, image Docker à deux étapes, CI/CD
-Cloud Build, Firestore, OAuth 2.1) est documentée intégralement dans `docs/EXPLOITATION.md` :
-provisionnement pas à pas, variables à renseigner, coûts, et parcours de démonstration une
-fois déployé. Ce fichier-ci ne la duplique pas ; il ne décrit que le code et ses contrats.
+Cloud Build, Firestore, OAuth 2.1) est **déployée et vérifiée** sur `sorabel-vitrine-2026`
+(europe-west1) : `docs/EXPLOITATION.md` documente le provisionnement pas à pas, les variables
+à renseigner, les coûts, et le parcours de démonstration tel qu'il a effectivement été
+déroulé — y compris les correctifs que ce premier déploiement réel a rendus nécessaires
+(§12). Ce fichier-ci ne la duplique pas ; il ne décrit que le code et ses contrats.
 
 ---
 
