@@ -14,14 +14,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from .modeles import (
-    TYPE_FICHE,
-    TYPE_NOTE,
-    TYPE_NOTICE,
-    TYPE_SAV,
-    DocumentCanonique,
-    Section,
-)
+from sorabel_enseigne import enseigne_active
+
+from .modeles import DocumentCanonique, Section
 
 TAILLE_MAX = 500  # tokens — e5 tronque silencieusement au-delà de 512
 TAILLE_MIN = 100  # tokens — en dessous, le vecteur n'est plus discriminant
@@ -31,12 +26,10 @@ TAILLE_MIN = 100  # tokens — en dessous, le vecteur n'est plus discriminant
 # évite de charger un tokenizer de 2 Go pour compter.
 CARACTERES_PAR_TOKEN = 3.5
 
-LIBELLES_TYPE = {
-    TYPE_FICHE: "Fiche technique",
-    TYPE_NOTICE: "Notice d'installation",
-    TYPE_NOTE: "Note interne",
-    TYPE_SAV: "Procédure SAV",
-}
+# Propres à l'enseigne : un guide d'entretien Kiabi n'est pas une « Notice d'installation »,
+# et le LLM répète le libellé qu'il lit. Ils entrent dans l'en-tête, donc dans le texte
+# embeddé et dans BM25 : changer ceux d'une enseigne impose de réindexer son corpus.
+LIBELLES_TYPE = enseigne_active().libelles_types
 
 
 def compter_tokens(texte: str) -> int:

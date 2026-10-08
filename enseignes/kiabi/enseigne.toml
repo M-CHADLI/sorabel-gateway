@@ -19,6 +19,14 @@ journal = "logs/kiabi/appels.jsonl"
 collection = "kiabi_docs"
 presentation = "l'assistant documentaire de Kiabi, enseigne de prêt-à-porter familial à petits prix (démonstration, données fictives)"
 
+# Libellés de type en tête de chaque chunk, que le LLM lit et répète ; un type absent garde
+# celui de Sorabel. « Procédure SAV » reste : les titres des procédures Kiabi commencent déjà
+# par ce libellé, que l'en-tête ne répète pas. Ils entrent dans le texte embeddé : en changer
+# impose make reindexer ENSEIGNE=kiabi.
+[rag.libelles_types]
+fiche_technique = "Fiche produit"
+notice = "Guide d'entretien"
+
 [extraction]
 pied_de_page = "Document Kiabi"
 

@@ -23,6 +23,17 @@ RACINE = Path(__file__).resolve().parent.parent
 DOSSIER_ENSEIGNES = RACINE / "enseignes"
 ENSEIGNE_PAR_DEFAUT = "sorabel"
 
+# Libellés des types de document dans l'en-tête des chunks, ceux d'avant le socle
+# multi-enseigne : une enseigne ne déclare dans `[rag.libelles_types]` que ceux qu'elle
+# change. Les codes répètent ceux de sorabel_rag/modeles.py, que ce module ne peut pas
+# importer ; tests/test_enseigne_libelles_types.py les tient alignés.
+LIBELLES_TYPES_PAR_DEFAUT = {
+    "fiche_technique": "Fiche technique",
+    "notice": "Notice d'installation",
+    "note_interne": "Note interne",
+    "procedure_sav": "Procédure SAV",
+}
+
 # Nom de l'enseigne du processus, posé au premier appel réussi d'`enseigne_active()`.
 _ENSEIGNE_FIGEE: str | None = None
 
@@ -44,9 +55,29 @@ class Enseigne:
     chemins: Chemins
     collection: str
     presentation: str
+    libelles_types: Mapping[str, str]
     pied_de_page: str
     nom_base: str
     commentaires_sql: Mapping[str, str]
+
+
+def _libelles_types(chemin_toml: Path, surcharges: Mapping) -> Mapping[str, str]:
+    inconnus = sorted(set(surcharges) - set(LIBELLES_TYPES_PAR_DEFAUT))
+    if inconnus:
+        # Une faute de frappe ignorée (« notices ») laisserait le libellé par défaut en
+        # place sans le moindre signal.
+        raise ValueError(
+            f"{chemin_toml} : rag.libelles_types, type de document inconnu : "
+            f"{', '.join(inconnus)} — types connus : {', '.join(LIBELLES_TYPES_PAR_DEFAUT)}"
+        )
+    for type_document, libelle in surcharges.items():
+        if not isinstance(libelle, str) or not libelle.strip():
+            # Le libellé ouvre l'en-tête de chaque chunk : vide, il effacerait le type de
+            # document du texte embeddé comme du prompt, sans aucune erreur.
+            raise ValueError(
+                f"{chemin_toml} : rag.libelles_types.{type_document} doit être un texte non vide"
+            )
+    return MappingProxyType({**LIBELLES_TYPES_PAR_DEFAUT, **surcharges})
 
 
 def charger_enseigne(chemin_toml: Path) -> Enseigne:
@@ -63,6 +94,7 @@ def charger_enseigne(chemin_toml: Path) -> Enseigne:
             chemins=Chemins(**{champ.name: RACINE / chemins[champ.name] for champ in fields(Chemins)}),
             collection=brut["rag"]["collection"],
             presentation=brut["rag"]["presentation"],
+            libelles_types=_libelles_types(chemin_toml, brut["rag"].get("libelles_types", {})),
             pied_de_page=brut["extraction"]["pied_de_page"],
             nom_base=brut["sql"]["nom_base"],
             commentaires_sql=MappingProxyType(dict(brut["sql"].get("commentaires", {}))),
