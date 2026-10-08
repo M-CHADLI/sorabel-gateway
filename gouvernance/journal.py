@@ -10,9 +10,12 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 
-CHEMIN_JOURNAL = Path(__file__).resolve().parent.parent / "logs" / "appels.jsonl"
+from sorabel_enseigne import enseigne_active
+
+# Un journal par enseigne en local ; en production (SORABEL_JOURNAL=stdout), chaque
+# serveur MCP écrit sur sa propre sortie et Cloud Logging les distingue par service.
+CHEMIN_JOURNAL = enseigne_active().chemins.journal
 
 
 def journaliser(

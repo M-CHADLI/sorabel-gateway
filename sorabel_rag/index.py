@@ -12,18 +12,20 @@ import os
 import pickle
 import re
 import unicodedata
-from pathlib import Path
 
 from dotenv import load_dotenv
+
+from sorabel_enseigne import enseigne_active
 
 from .chunking import Chunk
 
 load_dotenv()
 
-RACINE = Path(__file__).resolve().parent.parent
-DOSSIER_CHROMA = RACINE / "data" / "chroma"
-CHEMIN_BM25 = RACINE / "data" / "chroma" / "bm25.pkl"
-NOM_COLLECTION = "sorabel_docs"
+DOSSIER_CHROMA = enseigne_active().chemins.chroma
+CHEMIN_BM25 = DOSSIER_CHROMA / "bm25.pkl"
+# Une collection par enseigne : deux index ne se mélangent pas même si un `.toml` faisait
+# pointer deux enseignes vers le même dossier Chroma.
+NOM_COLLECTION = enseigne_active().collection
 
 # Embeddings servis par le déploiement Azure AI Foundry, plus en local : le CPU mettait
 # une centaine de secondes à charger le modèle à chaque démarrage de processus.

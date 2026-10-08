@@ -28,9 +28,9 @@ from mcp.server.fastmcp import FastMCP
 from gouvernance.modeles import charger_matrice
 from gouvernance.perimetre import Perimetre
 from mcp_server.tools import enregistrer_tools
+from sorabel_enseigne import enseigne_active
 
-RACINE = Path(__file__).resolve().parent.parent
-CHEMIN_GOUVERNANCE_DB = RACINE / "gouvernance" / "gouvernance.db"
+CHEMIN_GOUVERNANCE_DB = enseigne_active().chemins.gouvernance
 
 
 def construire_serveur_demo(profil: str) -> FastMCP:

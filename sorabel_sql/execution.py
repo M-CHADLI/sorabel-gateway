@@ -10,9 +10,10 @@ from __future__ import annotations
 import re
 import sqlite3
 import time
-from pathlib import Path
 
-CHEMIN_DB = Path(__file__).resolve().parent.parent / "data" / "sorabel.db"
+from sorabel_enseigne import enseigne_active
+
+CHEMIN_DB = enseigne_active().chemins.base_sql
 LIMIT_DEFAUT = 200
 TIMEOUT_SECONDES = 5.0
 

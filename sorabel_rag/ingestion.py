@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sorabel_enseigne import enseigne_active
+
 from .extraction import EXTRACTEURS
 from .modeles import (
     LIBELLES_ALERTES,
@@ -24,9 +26,8 @@ from .modeles import (
     hacher_fichier,
 )
 
-RACINE = Path(__file__).resolve().parent.parent
-CORPUS = RACINE / "data" / "corpus"
-SORTIE = RACINE / "data" / "canonique"
+CORPUS = enseigne_active().chemins.corpus
+SORTIE = enseigne_active().chemins.canonique
 
 
 @dataclass

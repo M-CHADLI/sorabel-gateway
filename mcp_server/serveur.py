@@ -17,12 +17,12 @@ from pydantic import AnyHttpUrl
 from gouvernance.depots import choisir_depot
 from gouvernance.modeles import charger_matrice
 from gouvernance.perimetre import Perimetre
+from sorabel_enseigne import enseigne_active
 
 from .authentification import VerificateurJeton
 from .tools import enregistrer_tools
 
-RACINE = Path(__file__).resolve().parent.parent
-CHEMIN_GOUVERNANCE_DB = RACINE / "gouvernance" / "gouvernance.db"
+CHEMIN_GOUVERNANCE_DB = enseigne_active().chemins.gouvernance
 
 
 def transport() -> str:

@@ -11,18 +11,21 @@ dit donc plus rien sur ce qu'un profil PEUT appeler.
 from __future__ import annotations
 
 import functools
-from pathlib import Path
 
 from gouvernance.depots import choisir_depot
 from gouvernance.modeles import CodeTool, charger_matrice
 from gouvernance.perimetre import Perimetre
+from sorabel_enseigne import enseigne_active
 
-RACINE = Path(__file__).resolve().parent.parent
+# La matrice est commune à toutes les enseignes (mêmes profils, tools, collections et
+# colonnes sensibles) : le front mutualisé lit celle de son enseigne de processus, quelle
+# que soit l'enseigne choisie en session.
+CHEMIN_GOUVERNANCE_DB = enseigne_active().chemins.gouvernance
 
 
 @functools.lru_cache(maxsize=1)
 def _matrice():
-    return charger_matrice(RACINE / "gouvernance" / "gouvernance.db")
+    return charger_matrice(CHEMIN_GOUVERNANCE_DB)
 
 
 def tools_accordes(profil: str) -> frozenset[str]:
@@ -37,6 +40,6 @@ def depot_identites():
     # décision (et la connexion qu'elle construit) ne doit être prise qu'une fois. Le choix
     # lui-même est délégué à choisir_depot(), commun avec mcp_server.serveur.
     return choisir_depot(
-        RACINE / "gouvernance" / "gouvernance.db",
+        CHEMIN_GOUVERNANCE_DB,
         profils_valides=frozenset(_matrice().profils),
     )
