@@ -190,3 +190,18 @@ capturés avant, ils font de « rien n'a changé pour Sorabel » une assertion v
    `enseignes/` : le corpus d'une autre enseigne n'entre pas dans l'image) ; `cloudbuild.yaml`
    non modifié : la production tourne sur l'enseigne par défaut, la CI construit la même image.
 5. Aucun fichier Kiabi dans le dépôt — il arrive au sous-chantier 2.
+
+## 9. Suites identifiées par la revue finale
+
+À traiter dans les sous-chantiers suivants ; rien n'est codé ici.
+
+- **Descriptions de tools** (`mcp_server/tools.py:112,161`) : « corpus documentaire Sorabel »,
+  « données Sorabel » partent vers les clients MCP par `tools/list`. À faire passer par
+  l'enseigne avant de déployer `kiabi-mcp` (sous-chantier 2 ou 4).
+- **`make reset-donnees`** supprime des chemins venus du `.toml`. Avant d'écrire le `.toml`
+  Kiabi (sous-chantier 2), valider dans `charger_enseigne` que `canonique` et `chroma` ne sont
+  ni la racine du dépôt ni des parents de `corpus`, `base_sql` ou `gouvernance`.
+- **`Enseigne`** n'est ni hachable, ni sérialisable par pickle, ni copiable en profondeur
+  (`MappingProxyType`) : à revoir avant le cache par session du front (sous-chantier 3).
+- **`nom` / `libelle`** sont annoncés comme utilisés par « journal, messages » et ne le sont
+  pas : ajouter un champ `enseigne` au journal au sous-chantier 4, ou amender cette spec.
