@@ -80,6 +80,32 @@ def _libelles_types(chemin_toml: Path, surcharges: Mapping) -> Mapping[str, str]
     return MappingProxyType({**LIBELLES_TYPES_PAR_DEFAUT, **surcharges})
 
 
+def _verifier_dossiers_regenerables(chemin_toml: Path, chemins: Chemins) -> None:
+    """`make reset-donnees` efface `canonique` et `chroma` en entier (rm -rf) : aucun des deux
+    ne doit être la racine du dépôt, ni contenir un autre chemin de l'enseigne. Avec
+    `chroma = "data"`, il emporterait le corpus et la base SQL de Sorabel ; avec
+    `canonique = "gouvernance"`, le code du paquet du même nom."""
+    regenerables = ("canonique", "chroma")
+    # Tous les autres chemins, pas une liste recopiée : un chemin ajouté à `Chemins` est
+    # protégé d'office.
+    preserves = [champ.name for champ in fields(Chemins) if champ.name not in regenerables]
+    for cle in regenerables:
+        # Normalisé : `rm -rf data/corpus/..` efface `data/`. La casse, elle, est déjà
+        # ignorée par pathlib sous Windows, comme par son système de fichiers.
+        dossier = Path(os.path.normpath(getattr(chemins, cle)))
+        if RACINE.is_relative_to(dossier):
+            raise ValueError(
+                f"{chemin_toml} : chemins.{cle} ({dossier}) est la racine du dépôt ou la "
+                "contient — make reset-donnees l'effacerait en entier"
+            )
+        for preserve in preserves:
+            if Path(os.path.normpath(getattr(chemins, preserve))).is_relative_to(dossier):
+                raise ValueError(
+                    f"{chemin_toml} : chemins.{cle} ({dossier}) est ou contient "
+                    f"chemins.{preserve} — make reset-donnees l'effacerait"
+                )
+
+
 def charger_enseigne(chemin_toml: Path) -> Enseigne:
     """Les chemins relatifs du `.toml` sont résolus depuis la racine du dépôt, pas depuis le
     dossier de l'enseigne : c'est ce qui permet à Sorabel de garder `data/` tel quel."""
@@ -101,6 +127,7 @@ def charger_enseigne(chemin_toml: Path) -> Enseigne:
         )
     except KeyError as cle:
         raise ValueError(f"{chemin_toml} : clé manquante {cle}") from None
+    _verifier_dossiers_regenerables(chemin_toml, resultat.chemins)
     if not resultat.pied_de_page.strip():
         # `ligne.startswith("")` est toujours vrai : un pied de page vide ferait écarter à
         # l'extraction toute la section Identification des fiches, sans aucune erreur.
