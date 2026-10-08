@@ -97,10 +97,13 @@ def test_changer_d_enseigne_entre_deux_imports_est_refuse(tmp_path, ecrire_ensei
     """Le scénario `.env` : `load_dotenv()` s'exécute à l'import de `sorabel_rag.index`, après
     que d'autres modules ont déjà figé leurs constantes sur l'enseigne d'origine. Sans refus,
     le processus mêlerait deux enseignes (chemins de l'une, collection de l'autre)."""
-    ecrire_enseigne(tmp_path, "essai", (tmp_path / "donnees").as_posix())
+    donnees_essai = tmp_path / "donnees_essai"
+    donnees_autre = tmp_path / "donnees_autre"
+    ecrire_enseigne(tmp_path, "essai", donnees_essai.as_posix())
+    ecrire_enseigne(tmp_path, "autre", donnees_autre.as_posix())
     script = PREAMBULE + """
 from gouvernance import journal
-os.environ["SORABEL_ENSEIGNE"] = "sorabel"
+os.environ["SORABEL_ENSEIGNE"] = "autre"
 from sorabel_rag import index
 """
     sortie = subprocess.run(
@@ -111,5 +114,4 @@ from sorabel_rag import index
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     assert sortie.returncode != 0
-    assert "ValueError" in sortie.stderr
-    assert "essai" in sortie.stderr and "sorabel" in sortie.stderr
+    assert "a changé en cours de processus" in sortie.stderr
