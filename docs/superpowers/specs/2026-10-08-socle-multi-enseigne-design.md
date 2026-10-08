@@ -16,8 +16,19 @@ métier, le branding du front. Décisions prises en amont :
 | Organisation | Un seul dépôt, un dossier par enseigne — pas de copie du code ni de branche dédiée |
 | Modèle de données | Même structure (5 tables, mêmes colonnes, 4 types de documents), habillée mode |
 | Génération des données Kiabi | Hybride : script déterministe + textes rédigés une fois par LLM, figés dans le dépôt |
-| Déploiement | Local, puis un second déploiement GCP derrière IAP |
+| Déploiement | Le déploiement existant, complété : un seul front avec une page de choix d'enseigne, un serveur MCP par enseigne (`sorabel-mcp`, `kiabi-mcp`) |
 | Aiguillage | Une config par enseigne, lue par un seul module (approche A ci-dessous) |
+
+**Rôle de Make.** Make prépare (données de chaque enseigne, en local et à la construction
+de l'image) et aiguille en local (`make demo ENSEIGNE=kiabi`). En production, la bascule se
+fait à l'exécution, par la page de choix du front : aucune requête web ne déclenche Make.
+
+**Isolation par processus.** Chaque serveur MCP sert une seule enseigne, figée au démarrage
+par `SORABEL_ENSEIGNE` : le serveur Kiabi n'a pas les données Sorabel à portée, aucun cache
+ne peut les mêler. Le front, qui ne détient aucune donnée, est mutualisé — il ne porte
+qu'une destination et un thème par session. Un processus unique servant les deux enseignes
+à la requête a été écarté : refonte du moteur en contexte par requête, et risque de fuite
+entre enseignes dans un projet dont l'argument est la gouvernance.
 
 Quatre sous-chantiers, chacun avec sa spec et son plan, livrés dans l'ordre :
 
@@ -25,11 +36,13 @@ Quatre sous-chantiers, chacun avec sa spec et son plan, livrés dans l'ordre :
 2. **Générateur Kiabi** — base SQLite et corpus (PDF, Markdown, HTML), cohérents entre eux
    et reproduisant les pièges du corpus Sorabel (versions multiples, références exactes,
    notes à diffusion restreinte, colonnes sensibles E5).
-3. **Branding du front** — thème, logo, textes et exemples par enseigne ; mode local du
-   front, aujourd'hui inutilisable hors IAP (`front/app_client.py`, garde « Session non
-   authentifiée »).
-4. **Déploiement GCP Kiabi** — image paramétrée par enseigne, services `kiabi-mcp` et
-   `kiabi-front` derrière IAP.
+3. **Front multi-enseigne** — page d'accueil de choix d'enseigne, enseigne gardée en
+   session, URL du serveur MCP et thème (logo, couleurs, textes, exemples) appliqués par
+   session ; mode local du front, aujourd'hui inutilisable hors IAP (`front/app_client.py`,
+   garde « Session non authentifiée »).
+4. **Déploiement GCP Kiabi** — même image (données des deux enseignes), même
+   `cloudbuild.yaml`, un service Cloud Run `kiabi-mcp` de plus ; `sorabel-front` et IAP
+   inchangés côté infrastructure.
 
 Hors périmètre de ce sous-chantier : tout fichier Kiabi, le front (hormis le chemin de
 `gouvernance.db` codé en dur dans `front/depot.py`), `Dockerfile`,
@@ -59,15 +72,22 @@ Sorabel en est la première enseigne. Les paquets `sorabel_*` gardent leur nom.
 enseignes/
   sorabel/enseigne.toml        déclare les chemins actuels : data/, gouvernance/, logs/
 sorabel_enseigne/
-  __init__.py                  enseigne_active(), charger_enseigne(chemin)
-  __main__.py                  python -m sorabel_enseigne make  → variables Make
+  __init__.py                  enseigne_active(), enseigne(nom), enseignes_disponibles(),
+                               charger_enseigne(chemin)
+  __main__.py                  python -m sorabel_enseigne make   → variables Make
+                               python -m sorabel_enseigne liste  → enseignes disponibles
 ```
 
 - `charger_enseigne(chemin_toml) -> Enseigne` : lit un `enseigne.toml` (`tomllib`, bibliothèque
   standard — aucune dépendance ajoutée) et renvoie un objet figé (`dataclass(frozen=True)`).
   Les chemins relatifs sont résolus depuis la racine du dépôt.
-- `enseigne_active() -> Enseigne` : lit `SORABEL_ENSEIGNE` (défaut `sorabel`), charge
-  `enseignes/<nom>/enseigne.toml`, met le résultat en cache pour la durée du processus.
+- `enseigne(nom) -> Enseigne` : charge `enseignes/<nom>/enseigne.toml`, en cache par nom.
+  C'est l'accès du front mutualisé, qui sert plusieurs enseignes et choisit par session
+  (sous-chantier 3).
+- `enseigne_active() -> Enseigne` : `enseigne(SORABEL_ENSEIGNE)`, défaut `sorabel`. C'est
+  l'accès du moteur (RAG, SQL, journal, serveur MCP) : une enseigne par processus.
+- `enseignes_disponibles() -> list[str]` : les dossiers `enseignes/*/enseigne.toml`, triés —
+  pour la page de choix et `make enseignes`.
 - **Enseigne inconnue** : `ValueError` explicite listant les enseignes disponibles. Jamais de
   repli silencieux sur Sorabel — une démo sur les mauvaises données est pire qu'un échec.
 
@@ -101,6 +121,11 @@ aucune signature publique ne change, et les tests qui surchargent ces constantes
 `monkeypatch.setattr` (`CHEMIN_JOURNAL` dans `test_gouvernance_journal.py` et
 `test_mcp_tools.py`) continuent de fonctionner tels quels.
 
+La matrice d'accès (`gouvernance/seed.py`) est commune à toutes les enseignes : mêmes
+profils, mêmes tools, mêmes collections, mêmes colonnes sensibles — conséquence directe de
+« même structure ». Le front mutualisé lit donc la matrice de son enseigne de processus
+(`front/depot.py`, via `enseigne_active()`), sans dépendre de l'enseigne choisie en session.
+
 La règle de `CLAUDE.md` « `sorabel_rag` et `sorabel_sql` n'importent rien de `gouvernance` »
 est préservée : `sorabel_enseigne` ne dépend d'aucun paquet du projet, tous peuvent
 l'importer.
@@ -114,7 +139,7 @@ l'importer.
   `JOURNAL` dans `.make/<enseigne>.mk`, inclus par le Makefile. Une règle
   `.make/%.mk: enseignes/%/enseigne.toml` le régénère quand le `.toml` change — sans quoi
   chaque `make` paierait un `uv run`. `.make/` est ignoré par git.
-- Nouvelle cible `make enseignes` : liste les dossiers `enseignes/*/enseigne.toml`.
+- Nouvelle cible `make enseignes` : `python -m sorabel_enseigne liste`.
 - `make help` affiche l'enseigne active.
 - Les textes des recettes restent sans accents (piège de page de code ANSI déjà documenté en
   tête du Makefile).
@@ -131,6 +156,9 @@ l'importer.
 - une enseigne inconnue lève `ValueError` et la liste des enseignes disponibles ;
 - une seconde enseigne décrite par un `.toml` temporaire (`charger_enseigne`) résout ses
   propres chemins, sans effet sur ceux de Sorabel ;
+- `enseigne(nom)` renvoie le même objet à chaque appel pour un même nom, et deux noms
+  différents ne partagent rien ;
+- `enseignes_disponibles()` contient `sorabel` ;
 - la sortie de `python -m sorabel_enseigne make` reprend exactement les chemins du `.toml`.
 
 **`tests/test_enseigne_sorabel_inchangee.py`** (nouveau) — instantanés de référence,
