@@ -1,0 +1,42 @@
+CREATE TABLE produits (
+  ref TEXT PRIMARY KEY,  -- référence commerciale REF-XXXX, clé vers le corpus documentaire
+  nom TEXT,  -- libellé commercial
+  categorie TEXT,  -- Protection électrique | EPI | Câblage | Outillage électroportatif | Visserie | Outillage à main | Distribution | Éclairage | Mesure
+  fabricant TEXT,
+  unite TEXT,  -- pièce | conditionnement
+  prix_vente_ht REAL,  -- prix public HT
+  actif INTEGER  -- 1 = au catalogue
+);
+
+CREATE TABLE stocks (
+  id INTEGER PRIMARY KEY,
+  ref TEXT,  -- clé vers produits.ref
+  entrepot TEXT,  -- LILLE | LYON | NANTES
+  quantite INTEGER,
+  seuil_reappro INTEGER  -- en dessous, réapprovisionnement nécessaire
+);
+
+CREATE TABLE clients (
+  id TEXT PRIMARY KEY,  -- ex. 'CLI-1000'
+  raison_sociale TEXT,
+  segment TEXT,  -- PME | artisan | collectivité | grand compte
+  ville TEXT,
+  email TEXT
+);
+
+CREATE TABLE commandes (
+  id TEXT PRIMARY KEY,  -- ex. 'CMD-2025-0004'
+  client_id TEXT,  -- clé vers clients.id
+  date_commande TEXT,  -- ISO 'AAAA-MM-JJ' — utiliser strftime() pour les agrégations temporelles
+  statut TEXT,  -- annulee | en_attente | expediee | livree | preparee
+  montant_ht REAL
+);
+
+CREATE TABLE ventes (
+  id INTEGER PRIMARY KEY,
+  commande_id TEXT,  -- clé vers commandes.id
+  ref TEXT,  -- clé vers produits.ref
+  quantite INTEGER,
+  prix_unitaire_ht REAL,
+  remise_pct REAL
+);
