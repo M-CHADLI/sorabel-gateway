@@ -63,7 +63,7 @@ CLES_AZURE := AZURE_OPENAI_ENDPOINT AZURE_OPENAI_API_KEY 'AZURE_OPENAI_DEPLOYMEN
 CORPUS = $(wildcard $(CORPUS_DIR)/*/*)
 
 .DEFAULT_GOAL := help
-.PHONY: help install enseignes verifier donnees reindexer test serveur demo contraste \
+.PHONY: help install generer-kiabi enseignes verifier donnees reindexer test serveur demo contraste \
         demo-http inspecteur journal vitrine gcp-statut clean reset-donnees
 
 ##@ Mise en route
@@ -78,6 +78,9 @@ help: ## Affiche cette aide
 
 install: ## Installe les dépendances (uv sync, Python 3.12)
 	uv sync
+
+generer-kiabi: ## Régénère les données FICTIVES de l'enseigne Kiabi (base + corpus, déterministe)
+	$(PY) scripts/generer_kiabi.py
 
 enseignes: ## Liste les enseignes disponibles (choisir avec ENSEIGNE=…)
 	@$(PY) -m sorabel_enseigne liste

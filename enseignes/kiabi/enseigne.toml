@@ -1,0 +1,36 @@
+# Enseigne de démonstration. Toutes les données sont FICTIVES, générées par
+# scripts/generer_kiabi.py — aucune ne provient de Kiabi. Démonstration non officielle.
+nom = "kiabi"
+libelle = "Kiabi"
+
+# Le corpus et la base générés sont commités ; canoniques et index sont régénérables
+# (make donnees ENSEIGNE=kiabi) et ignorés par git.
+[chemins]
+corpus = "enseignes/kiabi/data/corpus"
+canonique = "enseignes/kiabi/data/canonique"
+chroma = "enseignes/kiabi/data/chroma"
+base_sql = "enseignes/kiabi/data/kiabi.db"
+# Matrice d'accès commune à toutes les enseignes (mêmes profils, tools, collections, colonnes
+# sensibles) : une seule base de gouvernance.
+gouvernance = "gouvernance/gouvernance.db"
+journal = "logs/kiabi/appels.jsonl"
+
+[rag]
+collection = "kiabi_docs"
+presentation = "l'assistant documentaire de Kiabi, enseigne de prêt-à-porter familial à petits prix (démonstration, données fictives)"
+
+[extraction]
+pied_de_page = "Document Kiabi"
+
+[sql]
+nom_base = "Kiabi"
+
+[sql.commentaires]
+"produits.categorie" = "Femme | Homme | Fille | Garçon | Bébé | Chaussures | Accessoires"
+"produits.fabricant" = "atelier de confection fournisseur"
+"produits.unite" = "pièce | lot"
+"stocks.entrepot" = "LAUWIN | LYON | TOULOUSE"
+"clients.id" = "ex. 'MAG-1000' — un client est un magasin du réseau"
+"clients.raison_sociale" = "nom du magasin"
+"clients.segment" = "franchise | succursale | outlet"
+"commandes.client_id" = "clé vers clients.id — une commande est un réassort de magasin"

@@ -38,6 +38,7 @@ test = [
     "pytest>=8.0",
 ]
 dev = [
+    "fpdf2>=2.8.9",
     "pytest>=8.0",
 ]
 

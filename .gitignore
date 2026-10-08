@@ -27,3 +27,8 @@ logs/
 .claude/skills/slides/
 .claude/skills/ui-styling/
 .claude/skills/ui-ux-pro-max/
+
+# Enseignes générées : corpus et base commités, canoniques et index régénérables
+# (make donnees ENSEIGNE=<nom>)
+enseignes/*/data/canonique/
+enseignes/*/data/chroma/
