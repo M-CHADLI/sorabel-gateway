@@ -39,7 +39,7 @@ endif
 # payé qu'après une modification du .toml, pas à chaque commande.
 include .make/$(ENSEIGNE).mk
 
-.make/%.mk: enseignes/%/enseigne.toml sorabel_enseigne/__main__.py
+.make/%.mk: enseignes/%/enseigne.toml sorabel_enseigne/__init__.py sorabel_enseigne/__main__.py
 	@mkdir -p .make
 	@$(PY) -m sorabel_enseigne make $* > $@
 
@@ -57,7 +57,9 @@ GCP_REGION := europe-west1
 CLES_AZURE := AZURE_OPENAI_ENDPOINT AZURE_OPENAI_API_KEY 'AZURE_OPENAI_DEPLOYMENT(_NAME)?' \
               AZURE_OPENAI_EMBEDDING_DEPLOYMENT AZURE_OPENAI_RERANK_DEPLOYMENT
 
-# Différé (`=`) : au premier passage, CORPUS_DIR n'existe pas encore (le .mk se génère).
+# Différé (`=`) pour les recettes. Au tout premier passage (`.make/` absent), la règle
+# `$(MANIFESTE): $(CORPUS)` n'a pas encore de cible : Make l'ignore, puis se relance après
+# avoir généré le .mk.
 CORPUS = $(wildcard $(CORPUS_DIR)/*/*)
 
 .DEFAULT_GOAL := help
