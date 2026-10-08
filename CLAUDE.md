@@ -24,7 +24,7 @@ répète pas son contenu : il donne les conventions de travail.
 Les six phases applicatives sont livrées : ingestion, RAG hybride, Text-to-SQL, gouvernance,
 serveur MCP, front Streamlit. Le chantier `gcp-vitrine` les a ensuite mises en état de
 production sur GCP : transport HTTP, authentification OAuth 2.1, identités Firestore, image
-Docker, CI/CD Cloud Build (détails dans `docs/EXPLOITATION.md`). **212 tests** passent
+Docker, CI/CD Cloud Build (détails dans `docs/EXPLOITATION.md`). **218 tests** passent
 (`python -m pytest -q`).
 
 Reste ouvert : l'évaluation E6 (`eval/run_eval.py` n'existe pas — voir §12 du dossier
@@ -34,7 +34,7 @@ technique).
 
 ```bash
 uv sync                                   # Python 3.12, voir .python-version
-python -m pytest -q                       # 212 tests
+python -m pytest -q                       # 218 tests
 
 python scripts/seed_gouvernance.py        # gouvernance.db
 python scripts/ingerer.py                 # corpus → data/canonique/
@@ -93,11 +93,13 @@ ils reçoivent un objet à quatre méthodes (`peut_appeler`, `collections_autori
 `tables_autorisees`, `colonnes_interdites`). Toute méthode ajoutée doit l'être aux doublures
 de test.
 
-**Variables d'environnement** — `SORABEL_ENSEIGNE` : l'enseigne servie par le processus (`sorabel` par défaut, une seule par
-processus) — sa config est `enseignes/<nom>/enseigne.toml`, lue par `sorabel_enseigne` et
-nulle part ailleurs ; en local, `make … ENSEIGNE=<nom>` la positionne.
-`SORABEL_TRANSPORT` : `stdio` par défaut (développement,
-tests, `scripts/mcp_client.py`) ou `http` (streamable, production). `SORABEL_JOURNAL` :
+**Variables d'environnement** — `SORABEL_ENSEIGNE` : l'enseigne servie par le processus
+(`sorabel` par défaut, une seule par processus) — sa config est
+`enseignes/<nom>/enseigne.toml`, lue par `sorabel_enseigne` et nulle part ailleurs ; en
+local, `make … ENSEIGNE=<nom>` la positionne. Une enseigne inconnue lève `ValueError` à
+l'import ; l'enseigne est figée au premier appel d'`enseigne_active()`, et tout changement
+de la variable en cours de processus lève `ValueError`. `SORABEL_TRANSPORT` : `stdio` par
+défaut (développement, tests, `scripts/mcp_client.py`) ou `http` (streamable, production). `SORABEL_JOURNAL` :
 `stdout` bascule le journal vers Cloud Logging au lieu de `logs/appels.jsonl` (production).
 `SORABEL_DEPOT` : `firestore` choisit `gouvernance/identites_firestore.py` (production),
 toute autre valeur (ou absence) reste sur `gouvernance/identites.py` (SQLite). Front :

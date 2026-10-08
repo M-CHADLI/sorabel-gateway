@@ -7,7 +7,7 @@ alternatives écartées restent dans `docs/conception.md` ; le cahier des charge
 
 État au 10 septembre 2026 : chantiers RAG, Text-to-SQL, gouvernance, serveur MCP et front
 livrés, puis mis en état de production sur GCP (transport HTTP, authentification OAuth 2.1,
-identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **212 tests** au
+identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **218 tests** au
 vert. La vitrine a depuis été **provisionnée et vérifiée sur un projet GCP réel**
 (`sorabel-vitrine-2026`) : les deux services tournent, le parcours de démonstration complet
 fonctionne derrière IAP, et un client MCP tiers authentifié par OAuth Google obtient
@@ -154,7 +154,7 @@ scripts/
   demo_mcp_http.py    serveur MCP HTTP de démonstration SANS authentification — hors
                      périmètre de production, voir §14
 
-tests/               32 fichiers, 212 tests
+tests/               33 fichiers, 218 tests
 data/                corpus, sorabel.db, canonique/, chroma/  (hors git)
 logs/appels.jsonl    journal d'appels en stdio (hors git) ; en HTTP, voir SORABEL_JOURNAL
 ```
@@ -194,8 +194,11 @@ enseignes_disponibles() -> list[str]
 `journal` ; `Enseigne` porte aussi `collection`, `presentation`, `pied_de_page`, `nom_base`
 et `commentaires_sql`. Les constantes de module (`CORPUS`, `CHEMIN_DB`, `PROMPT_SYSTEME`…)
 gardent leur nom mais sont évaluées à l'import depuis l'enseigne active : changer
-d'enseigne, c'est changer de processus. Une enseigne inconnue arrête le processus — jamais
-de repli silencieux sur Sorabel.
+d'enseigne, c'est changer de processus. Une enseigne inconnue lève `ValueError` à l'import —
+jamais de repli silencieux sur Sorabel ; `enseigne_active()` fige l'enseigne à son premier
+appel, et tout changement de `SORABEL_ENSEIGNE` en cours de processus lève `ValueError`
+(un `.env` chargé après les imports ne doit pas produire un processus mi-une, mi-l'autre
+enseigne).
 
 ### Forme de retour des tools
 
@@ -474,7 +477,7 @@ SORABEL_PROFIL=commercial python -m mcp_server.serveur   # serveur MCP, stdio (d
 streamlit run front/app_client.py                        # poste de travail
 python scripts/mcp_client.py support answer_question '{"question": "..."}'
 
-python -m pytest -q                       # 212 tests
+python -m pytest -q                       # 218 tests
 ```
 
 Changer `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` **impose de réindexer tout le corpus** : des
@@ -597,6 +600,11 @@ Cloud Build, Firestore, OAuth 2.1) est **déployée et vérifiée** sur `sorabel
 à renseigner, les coûts, et le parcours de démonstration tel qu'il a effectivement été
 déroulé — y compris les correctifs que ce premier déploiement réel a rendus nécessaires
 (§12). Ce fichier-ci ne la duplique pas ; il ne décrit que le code et ses contrats.
+
+L'image copie le paquet `sorabel_enseigne/` et le seul `enseignes/sorabel/enseigne.toml` —
+jamais le dossier `enseignes/` entier, pour que le corpus d'une autre enseigne n'y entre pas ;
+`tests/test_dockerfile.py` vérifie statiquement que chaque étape copie les paquets que le code
+importe.
 
 ---
 
