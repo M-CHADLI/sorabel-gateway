@@ -1,0 +1,33 @@
+# Enseigne historique. Chemins et textes identiques au code d'avant le socle multi-enseigne
+# (tag sorabel-v1) — tests/test_enseigne_sorabel_inchangee.py le vérifie à l'octet près.
+nom = "sorabel"
+libelle = "Sorabel"
+
+# Relatifs à la racine du dépôt, pas à ce dossier : Sorabel garde ses chemins d'origine.
+[chemins]
+corpus = "data/corpus"
+canonique = "data/canonique"
+chroma = "data/chroma"
+base_sql = "data/sorabel.db"
+gouvernance = "gouvernance/gouvernance.db"
+journal = "logs/appels.jsonl"
+
+[rag]
+collection = "sorabel_docs"
+presentation = "l'assistant documentaire de Sorabel, distributeur B2B de matériel électrique"
+
+[extraction]
+# Ligne de pied de page des fiches PDF, à écarter de la section Identification.
+pied_de_page = "Document Sorabel"
+
+[sql]
+nom_base = "Sorabel"
+
+# Commentaires de colonnes porteurs du vocabulaire métier. Les noms et types de colonnes,
+# eux, sont communs à toutes les enseignes (sorabel_sql/schema.py).
+[sql.commentaires]
+"produits.categorie" = "Protection électrique | EPI | Câblage | Outillage électroportatif | Visserie | Outillage à main | Distribution | Éclairage | Mesure"
+"produits.unite" = "pièce | conditionnement"
+"stocks.entrepot" = "LILLE | LYON | NANTES"
+"clients.id" = "ex. 'CLI-1000'"
+"clients.segment" = "PME | artisan | collectivité | grand compte"
