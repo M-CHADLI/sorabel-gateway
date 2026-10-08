@@ -6,13 +6,14 @@ un appel et de risquer une fuite pour une question qu'on sait devoir refuser.
 
 from __future__ import annotations
 
+from sorabel_enseigne import enseigne_active
 from sorabel_llm.client import completer
 
 from .lexique_sensible import question_sensible
 from .schema import schema_commente
 
-PROMPT_SYSTEME = """Tu traduis une question en langage naturel en une requête SQLite en LECTURE \
-SEULE sur la base Sorabel. Règles strictes :
+PROMPT_SYSTEME = f"""Tu traduis une question en langage naturel en une requête SQLite en LECTURE \
+SEULE sur la base {enseigne_active().nom_base}. Règles strictes :
 - Une seule requête, commençant par SELECT ou WITH.
 - Pas de point-virgule multiple, pas de commentaire.
 - N'utilise QUE les tables et colonnes du schéma ci-dessous — n'invente jamais de colonne.

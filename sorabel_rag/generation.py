@@ -6,13 +6,14 @@ chunks réellement passés au prompt (titre, référence, date) — contrainte n
 
 from __future__ import annotations
 
+from sorabel_enseigne import enseigne_active
 from sorabel_llm.client import completer
 
 from .chunking import texte_complet
 from .recherche import SEUIL_REFUS, Resultat, rechercher
 
 PROMPT_SYSTEME = (
-    "Tu es l'assistant documentaire de Sorabel, distributeur B2B de matériel électrique. "
+    f"Tu es {enseigne_active().presentation}. "
     "Réponds à la question UNIQUEMENT à partir des extraits fournis ci-dessous, en français. "
     "Si les extraits ne permettent pas de répondre complètement, dis-le explicitement. "
     "Ne cite jamais tes sources toi-même : elles sont ajoutées automatiquement par le système."

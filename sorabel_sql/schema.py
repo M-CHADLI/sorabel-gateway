@@ -3,19 +3,26 @@
 Pas un CREATE TABLE brut : chaque colonne porte un commentaire qui dit ce qu'elle signifie,
 pas seulement son type. Le schéma est construit à partir du périmètre, pas tronqué après
 coup — on ne peut pas générer du SQL sur une colonne qu'on ignore.
+
+Tables, colonnes et types sont communs à toutes les enseignes ; le vocabulaire métier
+(catégories, entrepôts, segments…) vient de `[sql.commentaires]` dans enseigne.toml.
 """
 
 from __future__ import annotations
 
-# (nom, type SQLite, commentaire — vide si le nom de colonne se suffit à lui-même)
+from collections.abc import Mapping
+
+from sorabel_enseigne import enseigne_active
+
+# (nom, type SQLite, commentaire — vide si le nom de colonne se suffit à lui-même, ou si le
+# commentaire est propre à l'enseigne)
 COLONNES: dict[str, list[tuple[str, str, str]]] = {
     "produits": [
         ("ref", "TEXT PRIMARY KEY", "référence commerciale REF-XXXX, clé vers le corpus documentaire"),
         ("nom", "TEXT", "libellé commercial"),
-        ("categorie", "TEXT", "Protection électrique | EPI | Câblage | Outillage électroportatif | "
-                              "Visserie | Outillage à main | Distribution | Éclairage | Mesure"),
+        ("categorie", "TEXT", ""),
         ("fabricant", "TEXT", ""),
-        ("unite", "TEXT", "pièce | conditionnement"),
+        ("unite", "TEXT", ""),
         ("prix_vente_ht", "REAL", "prix public HT"),
         ("prix_achat_ht", "REAL", "prix d'achat fournisseur"),
         ("marge_pct", "REAL", "taux de marge"),
@@ -24,14 +31,14 @@ COLONNES: dict[str, list[tuple[str, str, str]]] = {
     "stocks": [
         ("id", "INTEGER PRIMARY KEY", ""),
         ("ref", "TEXT", "clé vers produits.ref"),
-        ("entrepot", "TEXT", "LILLE | LYON | NANTES"),
+        ("entrepot", "TEXT", ""),
         ("quantite", "INTEGER", ""),
         ("seuil_reappro", "INTEGER", "en dessous, réapprovisionnement nécessaire"),
     ],
     "clients": [
-        ("id", "TEXT PRIMARY KEY", "ex. 'CLI-1000'"),
+        ("id", "TEXT PRIMARY KEY", ""),
         ("raison_sociale", "TEXT", ""),
-        ("segment", "TEXT", "PME | artisan | collectivité | grand compte"),
+        ("segment", "TEXT", ""),
         ("ville", "TEXT", ""),
         ("email", "TEXT", ""),
     ],
@@ -56,10 +63,29 @@ COLONNES: dict[str, list[tuple[str, str, str]]] = {
 ORDRE_TABLES = ["produits", "stocks", "clients", "commandes", "ventes"]
 
 
-def _table_commentee(table: str, colonnes_interdites: frozenset[str]) -> str:
+def valider_commentaires(commentaires: Mapping[str, str]) -> None:
+    """Une clé mal orthographiée dans enseigne.toml (`produit.categorie`) serait sinon
+    ignorée en silence : le LLM perdrait la liste des valeurs sans que rien ne casse."""
+    connues = {f"{table}.{nom}" for table, colonnes in COLONNES.items() for nom, _, _ in colonnes}
+    inconnues = sorted(set(commentaires) - connues)
+    if inconnues:
+        raise ValueError(f"commentaires SQL sur des colonnes inconnues : {', '.join(inconnues)}")
+
+
+COMMENTAIRES_ENSEIGNE = enseigne_active().commentaires_sql
+valider_commentaires(COMMENTAIRES_ENSEIGNE)
+
+
+def _table_commentee(
+    table: str,
+    colonnes_interdites: frozenset[str],
+    commentaires: Mapping[str, str] | None = None,
+) -> str:
+    commentaires = COMMENTAIRES_ENSEIGNE if commentaires is None else commentaires
     lignes = [f"CREATE TABLE {table} ("]
     colonnes_visibles = [c for c in COLONNES[table] if c[0] not in colonnes_interdites]
-    for index, (nom, type_sql, commentaire) in enumerate(colonnes_visibles):
+    for index, (nom, type_sql, commentaire_moteur) in enumerate(colonnes_visibles):
+        commentaire = commentaires.get(f"{table}.{nom}", commentaire_moteur)
         virgule = "," if index < len(colonnes_visibles) - 1 else ""
         suffixe = f"  -- {commentaire}" if commentaire else ""
         lignes.append(f"  {nom} {type_sql}{virgule}{suffixe}")

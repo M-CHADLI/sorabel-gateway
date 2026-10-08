@@ -14,6 +14,8 @@ import yaml
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 
+from sorabel_enseigne import enseigne_active
+
 from .modeles import (
     TYPE_FICHE,
     TYPE_NOTE,
@@ -51,6 +53,10 @@ MOTIF_TITRE_NUMEROTE = re.compile(r"^\s*(\d+)\.\s+(.+?)\s*$")
 
 # Seuils du contrôle qualité, par type de document (caractères).
 SEUILS_LONGUEUR = {TYPE_FICHE: 200, TYPE_NOTICE: 200, TYPE_NOTE: 100, TYPE_SAV: 200}
+
+# Ligne de pied de page des fiches PDF (« Document Sorabel - diffusion interne… »), propre
+# à l'enseigne : du bruit à écarter de la section Identification.
+PIED_DE_PAGE = enseigne_active().pied_de_page
 
 
 def _maintenant() -> str:
@@ -109,7 +115,7 @@ def extraire_fiche(chemin: Path) -> DocumentCanonique:
         ligne for ligne in lignes[1:]
         if ligne.strip() and not ligne.strip().startswith("-")
         and not ligne.startswith("Caractéristiques")
-        and not ligne.startswith("Document Sorabel")
+        and not ligne.startswith(PIED_DE_PAGE)
         and not ligne.startswith("Accessoires")
     ]
     caracteristiques = [ligne.strip().lstrip("- ").strip() for ligne in lignes if ligne.strip().startswith("-")]

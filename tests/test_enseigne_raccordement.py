@@ -63,3 +63,30 @@ def test_chaque_module_lit_ses_chemins_dans_l_enseigne_active(tmp_path, ecrire_e
         "gouvernance_front": str(donnees / "gouvernance.db"),
         "journal": str(donnees / "appels.jsonl"),
     }
+
+
+SCRIPT_TEXTES = PREAMBULE + """
+from sorabel_rag import extraction
+from sorabel_rag import generation as generation_rag
+from sorabel_sql import generation as generation_sql
+from sorabel_sql import schema, tools
+tools.generer = lambda question, perimetre: None
+print(json.dumps({
+    "prompt_rag": generation_rag.PROMPT_SYSTEME,
+    "prompt_sql": generation_sql.PROMPT_SYSTEME,
+    "pied_de_page": extraction.PIED_DE_PAGE,
+    "schema_stocks": schema._table_commentee("stocks", frozenset()),
+    "hors_schema": tools.ask_database("question quelconque", None)["message"],
+}))
+"""
+
+
+def test_chaque_module_lit_ses_textes_dans_l_enseigne_active(tmp_path, ecrire_enseigne):
+    ecrire_enseigne(tmp_path, "essai", (tmp_path / "donnees").as_posix())
+    textes = _executer(SCRIPT_TEXTES, tmp_path)
+    assert textes["prompt_rag"].startswith("Tu es l'assistant documentaire de essai. ")
+    assert "LECTURE SEULE sur la base essai. Règles strictes" in textes["prompt_sql"]
+    assert textes["pied_de_page"] == "Document essai"
+    assert "  entrepot TEXT,  -- ENTREPOT-essai" in textes["schema_stocks"]
+    assert textes["hors_schema"] == "Cette question ne correspond à aucune table de la base essai."
+    assert "Sorabel" not in textes["prompt_rag"] + textes["prompt_sql"] + textes["schema_stocks"]

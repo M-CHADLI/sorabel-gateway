@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import re
 
+from sorabel_enseigne import enseigne_active
+
 from .execution import executer
 from .generation import QuestionSensible, generer
 from .schema import schema_commente
@@ -31,7 +33,7 @@ def ask_database(question: str, perimetre) -> dict:
     if sql_candidat is None:
         return {
             "statut": "hors_schema",
-            "message": "Cette question ne correspond à aucune table de la base Sorabel.",
+            "message": f"Cette question ne correspond à aucune table de la base {enseigne_active().nom_base}.",
             "sql": None,
         }
 
