@@ -53,7 +53,8 @@ MODELE_RERANKER = "llm-listwise"
 
 # Barème du prompt : 1,0 répond directement, 0,5 sujet proche, 0,0 sans rapport. Une
 # question hors corpus obtient 0 sur tous les candidats, d'où un seuil franc à mi-chemin
-# entre « sans rapport » et « sujet proche ».
+# entre « sans rapport » et « sujet proche ». Mesuré sur Sorabel : une enseigne dont le
+# corpus se comporte autrement déclare le sien (`rag.seuil_refus`, cf. generation.py).
 SEUIL_REFUS = 0.3
 
 # Le prompt porte tous les candidats : on tronque chacun pour borner la taille d'entrée
