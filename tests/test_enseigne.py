@@ -20,6 +20,14 @@ def dossier_essai(tmp_path, monkeypatch):
     enseigne.cache_clear()
 
 
+@pytest.fixture
+def enseigne_non_figee(monkeypatch):
+    """Remet à zéro le nom figé au premier appel d'`enseigne_active()` : les tests qui
+    changent `SORABEL_ENSEIGNE` partent d'un processus vierge, et la valeur d'origine
+    (celle de l'ensemble de la session de test) est restaurée ensuite."""
+    monkeypatch.setattr(sorabel_enseigne, "_ENSEIGNE_FIGEE", None)
+
+
 def test_sans_variable_l_enseigne_active_est_sorabel(monkeypatch):
     monkeypatch.delenv("SORABEL_ENSEIGNE", raising=False)
     assert enseigne_active().nom == "sorabel"
@@ -30,10 +38,33 @@ def test_variable_vide_retombe_sur_sorabel(monkeypatch):
     assert enseigne_active().nom == "sorabel"
 
 
-def test_enseigne_inconnue_leve_une_erreur_qui_liste_les_disponibles(monkeypatch):
+def test_enseigne_inconnue_leve_une_erreur_qui_liste_les_disponibles(monkeypatch, enseigne_non_figee):
     monkeypatch.setenv("SORABEL_ENSEIGNE", "inexistante")
     with pytest.raises(ValueError, match=r"inexistante.*disponibles : .*sorabel"):
         enseigne_active()
+
+
+def test_changer_de_variable_apres_le_premier_appel_leve_une_erreur(
+    monkeypatch, dossier_essai, ecrire_enseigne, enseigne_non_figee
+):
+    ecrire_enseigne(dossier_essai, "alpha", "enseignes/alpha/data")
+    ecrire_enseigne(dossier_essai, "beta", "enseignes/beta/data")
+    monkeypatch.setenv("SORABEL_ENSEIGNE", "alpha")
+    assert enseigne_active().nom == "alpha"
+    monkeypatch.setenv("SORABEL_ENSEIGNE", "beta")
+    with pytest.raises(ValueError, match=r"alpha.*beta|beta.*alpha"):
+        enseigne_active()
+
+
+def test_un_premier_appel_sur_une_enseigne_inconnue_ne_fige_rien(
+    monkeypatch, dossier_essai, ecrire_enseigne, enseigne_non_figee
+):
+    ecrire_enseigne(dossier_essai, "alpha", "enseignes/alpha/data")
+    monkeypatch.setenv("SORABEL_ENSEIGNE", "inconnue")
+    with pytest.raises(ValueError, match="enseigne inconnue"):
+        enseigne_active()
+    monkeypatch.setenv("SORABEL_ENSEIGNE", "alpha")
+    assert enseigne_active().nom == "alpha"
 
 
 def test_sorabel_declare_les_chemins_historiques():

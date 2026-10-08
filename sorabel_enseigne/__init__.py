@@ -23,6 +23,9 @@ RACINE = Path(__file__).resolve().parent.parent
 DOSSIER_ENSEIGNES = RACINE / "enseignes"
 ENSEIGNE_PAR_DEFAUT = "sorabel"
 
+# Nom de l'enseigne du processus, posé au premier appel réussi d'`enseigne_active()`.
+_ENSEIGNE_FIGEE: str | None = None
+
 
 @dataclass(frozen=True)
 class Chemins:
@@ -91,4 +94,22 @@ def enseigne(nom: str) -> Enseigne:
 
 
 def enseigne_active() -> Enseigne:
-    return enseigne(os.environ.get("SORABEL_ENSEIGNE") or ENSEIGNE_PAR_DEFAUT)
+    """Enseigne du processus, figée au premier appel réussi.
+
+    Les modules du moteur évaluent leurs constantes (chemins, textes) à l'import, et trois
+    d'entre eux appellent `load_dotenv()` à l'import : un `SORABEL_ENSEIGNE` posé dans `.env`
+    arriverait après que d'autres modules ont déjà lu la variable. Sans verrou, le processus
+    serait moitié une enseigne, moitié l'autre. On refuse donc tout changement de valeur en
+    cours de processus. Le nom n'est figé qu'après validation : une enseigne inconnue ne
+    verrouille rien."""
+    global _ENSEIGNE_FIGEE
+    nom = os.environ.get("SORABEL_ENSEIGNE") or ENSEIGNE_PAR_DEFAUT
+    if _ENSEIGNE_FIGEE is not None and nom != _ENSEIGNE_FIGEE:
+        raise ValueError(
+            f"SORABEL_ENSEIGNE a changé en cours de processus : {_ENSEIGNE_FIGEE!r} au premier "
+            f"appel, {nom!r} maintenant — un `.env` chargé après le démarrage en est la cause "
+            "probable. Exporter la variable avant de lancer le processus."
+        )
+    resultat = enseigne(nom)
+    _ENSEIGNE_FIGEE = nom
+    return resultat

@@ -5,6 +5,7 @@ processus de test a déjà importé ces modules avec l'enseigne sorabel (tests/c
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -90,3 +91,25 @@ def test_chaque_module_lit_ses_textes_dans_l_enseigne_active(tmp_path, ecrire_en
     assert "  entrepot TEXT,  -- ENTREPOT-essai" in textes["schema_stocks"]
     assert textes["hors_schema"] == "Cette question ne correspond à aucune table de la base essai."
     assert "Sorabel" not in textes["prompt_rag"] + textes["prompt_sql"] + textes["schema_stocks"]
+
+
+def test_changer_d_enseigne_entre_deux_imports_est_refuse(tmp_path, ecrire_enseigne):
+    """Le scénario `.env` : `load_dotenv()` s'exécute à l'import de `sorabel_rag.index`, après
+    que d'autres modules ont déjà figé leurs constantes sur l'enseigne d'origine. Sans refus,
+    le processus mêlerait deux enseignes (chemins de l'une, collection de l'autre)."""
+    ecrire_enseigne(tmp_path, "essai", (tmp_path / "donnees").as_posix())
+    script = PREAMBULE + """
+from gouvernance import journal
+os.environ["SORABEL_ENSEIGNE"] = "sorabel"
+from sorabel_rag import index
+"""
+    sortie = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)],
+        cwd=RACINE, capture_output=True, text=True, encoding="utf-8",
+        # Sous Windows, stderr du fils sort en cp1252 par défaut : le message accentué
+        # ferait échouer le décodage UTF-8 côté test.
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+    )
+    assert sortie.returncode != 0
+    assert "ValueError" in sortie.stderr
+    assert "essai" in sortie.stderr and "sorabel" in sortie.stderr
