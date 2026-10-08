@@ -8,9 +8,14 @@ logs/
 eval/
 data/canonique/
 data/chroma/
-# Gouvernance : régénérable par scripts/seed_gouvernance.py — sinon la ligne 63 du
-# Dockerfile (COPY gouvernance/ gouvernance/) écraserait la base propre de l'étape
-# `index` par un fichier local potentiellement périmé.
+# Sorties régénérables des autres enseignes (make donnees ENSEIGNE=…), reconstruites par
+# l'étape `index` comme data/canonique/ et data/chroma/ : une copie locale, peut-être
+# périmée, n'a rien à faire dans le contexte de build.
+enseignes/*/data/canonique/
+enseignes/*/data/chroma/
+# Gouvernance : régénérable par scripts/seed_gouvernance.py — sinon le
+# `COPY gouvernance/ gouvernance/` de l'étape servie du Dockerfile écraserait la base
+# propre de l'étape `index` par un fichier local potentiellement périmé.
 gouvernance/*.db
 __pycache__/
 **/__pycache__/
