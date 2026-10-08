@@ -11,6 +11,10 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
+# Le moteur lit l'enseigne a l'import : sans le paquet et son .toml, rien ne demarre. On copie le
+# seul .toml, jamais `enseignes/` : le corpus d'une autre enseigne ne doit pas entrer dans l'image.
+COPY sorabel_enseigne/ sorabel_enseigne/
+COPY enseignes/sorabel/enseigne.toml enseignes/sorabel/enseigne.toml
 COPY sorabel_rag/ sorabel_rag/
 COPY sorabel_llm/ sorabel_llm/
 COPY gouvernance/ gouvernance/
@@ -60,6 +64,8 @@ COPY --from=index /app/gouvernance/gouvernance.db gouvernance/gouvernance.db
 COPY sorabel_rag/ sorabel_rag/
 COPY sorabel_sql/ sorabel_sql/
 COPY sorabel_llm/ sorabel_llm/
+COPY sorabel_enseigne/ sorabel_enseigne/
+COPY enseignes/sorabel/enseigne.toml enseignes/sorabel/enseigne.toml
 COPY gouvernance/ gouvernance/
 COPY mcp_server/ mcp_server/
 COPY front/ front/

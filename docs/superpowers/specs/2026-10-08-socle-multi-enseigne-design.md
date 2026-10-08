@@ -45,8 +45,9 @@ Quatre sous-chantiers, chacun avec sa spec et son plan, livrés dans l'ordre :
    inchangés côté infrastructure.
 
 Hors périmètre de ce sous-chantier : tout fichier Kiabi, le front (hormis le chemin de
-`gouvernance.db` codé en dur dans `front/depot.py`), `Dockerfile`,
-`cloudbuild.yaml`, le seuil de refus par enseigne (à recalibrer au sous-chantier 2 si les
+`gouvernance.db` codé en dur dans `front/depot.py`), `Dockerfile` (sauf les `COPY` de
+`sorabel_enseigne/` et de `enseignes/sorabel/enseigne.toml`, que le moteur exige à
+l'import), `cloudbuild.yaml`, le seuil de refus par enseigne (à recalibrer au sous-chantier 2 si les
 scores du reranker sur le corpus Kiabi le demandent).
 
 ## 2. Vocabulaire
@@ -184,6 +185,8 @@ capturés avant, ils font de « rien n'a changé pour Sorabel » une assertion v
 1. `make test` vert : les 182 tests existants, inchangés, plus les nouveaux.
 2. Instantanés Sorabel identiques avant et après.
 3. `make demo` renvoie les mêmes titres pour `search_docs('politique tarifaire')` qu'avant.
-4. `Dockerfile` et `cloudbuild.yaml` non modifiés : la production tourne sur l'enseigne par
-   défaut, la CI construit la même image.
+4. `Dockerfile` modifié par les seuls `COPY` de `sorabel_enseigne/` et de
+   `enseignes/sorabel/enseigne.toml` (le moteur en dépend à l'import ; le `.toml` seul, jamais
+   `enseignes/` : le corpus d'une autre enseigne n'entre pas dans l'image) ; `cloudbuild.yaml`
+   non modifié : la production tourne sur l'enseigne par défaut, la CI construit la même image.
 5. Aucun fichier Kiabi dans le dépôt — il arrive au sous-chantier 2.

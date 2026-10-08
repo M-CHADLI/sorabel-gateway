@@ -17,7 +17,7 @@
 - **Enseigne inconnue → `ValueError` explicite**, jamais de repli silencieux sur Sorabel.
 - **`sorabel_enseigne` n'importe aucun paquet du projet.** `sorabel_rag` et `sorabel_sql` n'importent toujours rien de `gouvernance`. Le contrat duck-typé de `Perimetre` (4 méthodes) ne change pas.
 - **Aucune dépendance ajoutée** (`tomllib` est dans la bibliothèque standard).
-- **Ne pas toucher** `Dockerfile`, `cloudbuild.yaml`, `front/app_client.py`, `front/passerelle.py`. Aucun fichier Kiabi.
+- **Ne pas toucher** `cloudbuild.yaml`, `front/app_client.py`, `front/passerelle.py`. Aucun fichier Kiabi. Le `Dockerfile` ne change que par les `COPY` de `sorabel_enseigne/` et de `enseignes/sorabel/enseigne.toml` (le moteur en dépend à l'import) — amendé après la revue finale (2026-10-08).
 - **Makefile** : aucun accent dans le texte des recettes (page de code ANSI sous Windows, cf. commentaire en tête du Makefile) ; uniquement des chemins **relatifs** à la racine (le chemin du dépôt contient des espaces et une apostrophe).
 - **Langue** : identifiants de domaine, messages et commentaires en français. Les commentaires expliquent *pourquoi*.
 - **Commandes** : toutes lancées depuis la racine du dépôt, dans le shell Bash (Git Bash), via `uv run`.
