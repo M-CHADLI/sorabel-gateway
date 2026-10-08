@@ -308,7 +308,9 @@ def ecrire_fiches(rng: random.Random, produits: list[dict]) -> None:
                         if "coton" in p["composition"] else p["composition"] + ", fibres recyclées")
             versions.append(("2.1", _date(rng, 2025), nouvelle, p["prix_vente_ht"]))
         for version, jour, composition, prix in versions:
-            entretien = ENTRETIEN[p["famille"]][1]
+            # Renvoi au guide plutôt que la consigne : le guide a ses propres versions (v2.0 à
+            # 20 °C), et une fiche qui recopierait la consigne finirait par la contredire.
+            entretien = f"voir le guide d'entretien {p['ref']}"
             _ecrire_pdf(dossier / f"{p['ref']}-v{version}.pdf", [
                 f"FICHE PRODUIT - {p['nom']}",
                 f"Référence produit : {p['ref']}",
