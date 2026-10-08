@@ -7,7 +7,7 @@ alternatives écartées restent dans `docs/conception.md` ; le cahier des charge
 
 État au 10 septembre 2026 : chantiers RAG, Text-to-SQL, gouvernance, serveur MCP et front
 livrés, puis mis en état de production sur GCP (transport HTTP, authentification OAuth 2.1,
-identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **182 tests** au
+identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **212 tests** au
 vert. La vitrine a depuis été **provisionnée et vérifiée sur un projet GCP réel**
 (`sorabel-vitrine-2026`) : les deux services tournent, le parcours de démonstration complet
 fonctionne derrière IAP, et un client MCP tiers authentifié par OAuth Google obtient
@@ -104,6 +104,15 @@ sorabel_sql/         chaîne données, lecture seule
   tools.py           ask_database, get_schema, check_stock, order_status
   lexique_sensible.py  vocabulaire déclencheur du garde-fou
 
+sorabel_enseigne/    une enseigne par processus, sans dépendance vers le reste du projet
+  __init__.py        enseigne_active(), enseigne(nom), enseignes_disponibles(),
+                     charger_enseigne(chemin)
+  __main__.py        python -m sorabel_enseigne liste | make <nom> (variables du Makefile)
+
+enseignes/
+  sorabel/enseigne.toml  chemins historiques (data/, gouvernance/, logs/), prompts,
+                     pied de page PDF, vocabulaire du schéma SQL
+
 sorabel_llm/
   client.py          client unique Azure AI Foundry (API v1), completer()
 
@@ -145,7 +154,7 @@ scripts/
   demo_mcp_http.py    serveur MCP HTTP de démonstration SANS authentification — hors
                      périmètre de production, voir §14
 
-tests/               26 fichiers, 182 tests
+tests/               32 fichiers, 212 tests
 data/                corpus, sorabel.db, canonique/, chroma/  (hors git)
 logs/appels.jsonl    journal d'appels en stdio (hors git) ; en HTTP, voir SORABEL_JOURNAL
 ```
@@ -154,7 +163,7 @@ logs/appels.jsonl    journal d'appels en stdio (hors git) ; en HTTP, voir SORABE
 
 ## 3. Contrats entre paquets
 
-Les trois interfaces à ne pas casser.
+Les quatre interfaces à ne pas casser.
 
 ### `Perimetre` — duck-typé, volontairement
 
@@ -170,6 +179,23 @@ perimetre.colonnes_interdites(table: str) -> frozenset[str]
 
 Les tests fabriquent des périmètres factices avec ces quatre méthodes, sans base de données.
 Toute méthode ajoutée ici doit l'être aux doublures de test.
+
+### `sorabel_enseigne` — une enseigne par processus
+
+Le moteur lit ses chemins et ses textes métier dans `enseigne_active()`, jamais en dur :
+
+```python
+enseigne_active() -> Enseigne        # SORABEL_ENSEIGNE, « sorabel » par défaut
+enseigne(nom: str) -> Enseigne       # par nom, en cache — pour le front mutualisé
+enseignes_disponibles() -> list[str]
+```
+
+`Enseigne.chemins` porte `corpus`, `canonique`, `chroma`, `base_sql`, `gouvernance`,
+`journal` ; `Enseigne` porte aussi `collection`, `presentation`, `pied_de_page`, `nom_base`
+et `commentaires_sql`. Les constantes de module (`CORPUS`, `CHEMIN_DB`, `PROMPT_SYSTEME`…)
+gardent leur nom mais sont évaluées à l'import depuis l'enseigne active : changer
+d'enseigne, c'est changer de processus. Une enseigne inconnue arrête le processus — jamais
+de repli silencieux sur Sorabel.
 
 ### Forme de retour des tools
 
@@ -448,7 +474,7 @@ SORABEL_PROFIL=commercial python -m mcp_server.serveur   # serveur MCP, stdio (d
 streamlit run front/app_client.py                        # poste de travail
 python scripts/mcp_client.py support answer_question '{"question": "..."}'
 
-python -m pytest -q                       # 182 tests
+python -m pytest -q                       # 212 tests
 ```
 
 Changer `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` **impose de réindexer tout le corpus** : des
