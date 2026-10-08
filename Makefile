@@ -25,6 +25,27 @@ export PYTHONUTF8 := 1
 # `uv run` synchronise l'environnement avant chaque commande : pas de venv à activer.
 PY := uv run python
 
+# L'enseigne choisit le jeu de données et les textes métier ; le moteur reste le même.
+# Exportée pour que chaque recette Python lise la même (sorabel_enseigne).
+ENSEIGNE ?= sorabel
+export SORABEL_ENSEIGNE := $(ENSEIGNE)
+
+ifeq ($(wildcard enseignes/$(ENSEIGNE)/enseigne.toml),)
+$(error Enseigne inconnue : $(ENSEIGNE) (voir make enseignes))
+endif
+
+# Chemins de l'enseigne, générés depuis enseigne.toml — seule source de vérité. Make
+# régénère un fichier inclus dont la source a changé, puis se relance : le `uv run` n'est
+# payé qu'après une modification du .toml, pas à chaque commande.
+include .make/$(ENSEIGNE).mk
+
+.make/%.mk: enseignes/%/enseigne.toml sorabel_enseigne/__main__.py
+	@mkdir -p .make
+	@$(PY) -m sorabel_enseigne make $* > $@
+
+# Une recette interrompue ne doit pas laisser un .mk vide, que Make inclurait ensuite.
+.DELETE_ON_ERROR:
+
 PROFIL ?= commercial
 N      ?= 10
 
@@ -36,14 +57,12 @@ GCP_REGION := europe-west1
 CLES_AZURE := AZURE_OPENAI_ENDPOINT AZURE_OPENAI_API_KEY 'AZURE_OPENAI_DEPLOYMENT(_NAME)?' \
               AZURE_OPENAI_EMBEDDING_DEPLOYMENT AZURE_OPENAI_RERANK_DEPLOYMENT
 
-GOUVERNANCE_DB := gouvernance/gouvernance.db
-MANIFESTE      := data/canonique/_manifeste.json
-INDEX          := data/chroma/bm25.pkl
-CORPUS         := $(wildcard data/corpus/*/*)
+# Différé (`=`) : au premier passage, CORPUS_DIR n'existe pas encore (le .mk se génère).
+CORPUS = $(wildcard $(CORPUS_DIR)/*/*)
 
 .DEFAULT_GOAL := help
-.PHONY: help install verifier donnees reindexer test serveur demo contraste demo-http \
-        inspecteur journal vitrine gcp-statut clean reset-donnees
+.PHONY: help install enseignes verifier donnees reindexer test serveur demo contraste \
+        demo-http inspecteur journal vitrine gcp-statut clean reset-donnees
 
 ##@ Mise en route
 
@@ -52,12 +71,17 @@ help: ## Affiche cette aide
 	  /^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)} \
 	  /^[a-z][a-z-]*:.*## / {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo
+	@echo "Enseigne active : $(ENSEIGNE) (ENSEIGNE=..., voir make enseignes)"
 	@echo "Variables : PROFIL=support|commercial|dev|admin (actuel : $(PROFIL)), N=$(N)"
 
 install: ## Installe les dépendances (uv sync, Python 3.12)
 	uv sync
 
-verifier: ## Contrôle avant démo : .env Azure, données construites, front déployé joignable
+enseignes: ## Liste les enseignes disponibles (choisir avec ENSEIGNE=…)
+	@$(PY) -m sorabel_enseigne liste
+
+verifier: ## Contrôle avant démo : .env Azure, données de l'enseigne, front déployé joignable
+	@echo "Enseigne : $(ENSEIGNE)"
 	@echo "Azure : variables du .env"
 	@for cle in $(CLES_AZURE); do \
 	  if grep -Eq "^$$cle=." .env 2>/dev/null; then echo "  ok      $${cle%%(*}"; \
@@ -65,20 +89,27 @@ verifier: ## Contrôle avant démo : .env Azure, données construites, front dé
 	@echo "Fichiers construits"
 	@for f in $(GOUVERNANCE_DB) $(MANIFESTE) $(INDEX); do \
 	  if [ -f $$f ]; then echo "  ok      $$f"; \
-	  else echo "  ABSENT  $$f  -> make donnees"; fi; done
+	  else echo "  ABSENT  $$f  -> make donnees ENSEIGNE=$(ENSEIGNE)"; fi; done
 	@echo "Front Cloud Run (302 attendu : IAP redirige vers la connexion Google)"
 	@code=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 $(URL_FRONT)); \
 	  echo "  HTTP $$code  $(URL_FRONT)"
 
-donnees: $(GOUVERNANCE_DB) $(MANIFESTE) $(INDEX) ## Construit matrice d'accès, canoniques et index (seulement ce qui manque)
+donnees: $(GOUVERNANCE_DB) $(MANIFESTE) $(INDEX) ## Construit matrice d'accès, canoniques et index de l'enseigne (seulement ce qui manque)
 
 reindexer: $(MANIFESTE) ## Force la réindexation — obligatoire après un changement de déploiement d'embeddings
 	$(PY) scripts/indexer.py
 
 ##@ Qualité
 
-test: $(GOUVERNANCE_DB) $(MANIFESTE) ## Lance les 182 tests
+# Les tests portent sur le moteur avec Sorabel pour jeu de données (tests/conftest.py) :
+# préparer les données d'une autre enseigne avant de les lancer n'aurait aucun sens.
+ifeq ($(ENSEIGNE),sorabel)
+test: $(GOUVERNANCE_DB) $(MANIFESTE) ## Lance la suite de tests (enseigne sorabel)
 	$(PY) -m pytest -q
+else
+test:
+	@echo "make test tourne sur l'enseigne sorabel : relancer sans ENSEIGNE=$(ENSEIGNE)"; exit 1
+endif
 
 ##@ Démonstration locale (stdio, sans authentification)
 
@@ -88,16 +119,18 @@ demo: donnees .env ## Client MCP scripté : recherche doc, SQL, tentative d'écr
 contraste: donnees .env ## Même séquence en support puis en commercial : marges masquées puis visibles (E5)
 	@for p in support commercial; do $(PY) scripts/mcp_client.py --profil $$p; done
 
-journal: ## Derniers appels journalisés, refus compris (N=…)
+journal: ## Derniers appels journalisés de l'enseigne, refus compris (N=…)
 	@$(PY) -c "import json; \
-	lignes = [json.loads(l) for l in open('logs/appels.jsonl', encoding='utf-8')][-$(N):]; \
+	lignes = [json.loads(l) for l in open('$(JOURNAL)', encoding='utf-8')][-$(N):]; \
 	[print(f\"{l['horodatage'][:19]}  {l['profil']:<10} {l['tool']:<16} {l['statut']:<13} {l.get('motif') or ''}\") for l in lignes]"
 
 serveur: donnees .env ## Serveur MCP en stdio, profil figé au démarrage (PROFIL=…)
 	SORABEL_PROFIL=$(PROFIL) $(PY) -m mcp_server.serveur
 
+# L'Inspector ne transmet au serveur qu'une liste blanche de variables d'environnement :
+# sans -e explicite, SORABEL_ENSEIGNE serait perdue et le serveur servirait Sorabel.
 inspecteur: donnees .env ## MCP Inspector (navigateur) branché sur le serveur stdio (PROFIL=…)
-	npx @modelcontextprotocol/inspector -e SORABEL_PROFIL=$(PROFIL) uv run python -m mcp_server.serveur
+	npx @modelcontextprotocol/inspector -e SORABEL_PROFIL=$(PROFIL) -e SORABEL_ENSEIGNE=$(ENSEIGNE) uv run python -m mcp_server.serveur
 
 demo-http: donnees .env ## Serveur HTTP :8080 SANS authentification, pour un playground MCP (PROFIL=…)
 	$(PY) scripts/demo_mcp_http.py --profil $(PROFIL)
@@ -112,13 +145,13 @@ gcp-statut: ## État des services Cloud Run sorabel-mcp et sorabel-front
 
 ##@ Nettoyage
 
-clean: ## Supprime caches Python et journaux d'outils locaux (*.log)
+clean: ## Supprime caches Python, variables Make générées et journaux d'outils (*.log)
 	find . -path ./.venv -prune -o -type d -name __pycache__ -exec rm -rf {} +
-	rm -rf .pytest_cache
+	rm -rf .pytest_cache .make
 	rm -f *.log
 
-reset-donnees: ## Supprime les données régénérables — la reconstruction rappellera Azure
-	rm -rf data/canonique data/chroma $(GOUVERNANCE_DB)
+reset-donnees: ## Supprime les données régénérables de l'enseigne — la reconstruction rappellera Azure
+	rm -rf $(dir $(MANIFESTE)) $(dir $(INDEX)) $(GOUVERNANCE_DB)
 
 # --- Fichiers construits ---------------------------------------------------------------
 

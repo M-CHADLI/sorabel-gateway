@@ -9,6 +9,9 @@ data/chroma/
 gouvernance/*.db
 logs/
 
+# Variables Make générées depuis enseignes/<nom>/enseigne.toml (python -m sorabel_enseigne)
+.make/
+
 # Journaux d'outils lancés en local (serveur de démo, ngrok, inspecteur MCP) :
 # jamais un livrable, jamais à committer par accident.
 *.log
