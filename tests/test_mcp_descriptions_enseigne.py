@@ -57,3 +57,18 @@ def test_les_descriptions_nomment_l_enseigne_active(tmp_path, ecrire_enseigne):
     assert descriptions == {
         nom: texte.replace("Sorabel", "Essai essai") for nom, texte in _instantane().items()
     }
+
+
+def test_un_tool_sans_docstring_ne_fait_pas_tomber_l_enregistrement():
+    """Sous `python -OO`, les docstrings sont supprimées : `None.replace` faisait lever
+    l'enregistrement des huit tools."""
+    from mcp_server.tools import LIBELLE_ENSEIGNE, _description
+
+    def sans_docstring():
+        pass
+
+    def avec_marque():
+        """Interroge {enseigne}, au format {"cle": 1}."""
+
+    assert _description(sans_docstring) == ""
+    assert _description(avec_marque) == f'Interroge {LIBELLE_ENSEIGNE}, au format {{"cle": 1}}.'

@@ -36,6 +36,14 @@ from sorabel_sql.tools import order_status as _sql_order_status
 LIBELLE_ENSEIGNE = enseigne_active().libelle
 
 
+def _description(func: Callable) -> str:
+    """Docstring d'un tool avec `{enseigne}` résolu. `replace` et non `format` : une accolade
+    littérale (un exemple JSON) ne doit pas empêcher le serveur de démarrer. `or ""` : sous
+    `python -OO` les docstrings disparaissent, et un tool sans docstring ne doit pas faire
+    tomber l'enregistrement des huit."""
+    return (func.__doc__ or "").replace("{enseigne}", LIBELLE_ENSEIGNE)
+
+
 def enregistrer_tools(mcp, resolveur_perimetre: Callable[[], Any]) -> None:
     """Enregistre les 8 tools. Le périmètre est résolu à CHAQUE appel.
 
@@ -102,9 +110,7 @@ def enregistrer_tools(mcp, resolveur_perimetre: Callable[[], Any]) -> None:
             # amputée du paramètre `perimetre` : il est injecté par ce décorateur, jamais
             # fourni par l'appelant, et ne doit donc jamais apparaître dans le schéma.
             enveloppe.__name__ = func.__name__
-            # `replace` et non `format` : une accolade littérale dans une docstring (un exemple
-            # JSON) ne doit pas empêcher le serveur de démarrer.
-            enveloppe.__doc__ = func.__doc__.replace("{enseigne}", LIBELLE_ENSEIGNE)
+            enveloppe.__doc__ = _description(func)
             # eval_str=True : ce module utilise `from __future__ import annotations`, donc les
             # annotations de `func` sont des chaînes ("dict", "str | None", ...) tant qu'on ne
             # les évalue pas explicitement. Sans ça, FastMCP verrait un type de retour littéral
