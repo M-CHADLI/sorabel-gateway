@@ -33,6 +33,11 @@ steps:
   # exécute l'ingestion puis l'indexation, qui appellent Azure AI Foundry pour
   # les embeddings.
   #
+  # Couplage : l'image est commune, donc l'index de Kiabi se construit ici aussi, après celui
+  # de Sorabel. Son échec (429 Azure, ingestion Kiabi cassée) fait échouer CETTE étape et, par
+  # elle, tous les déploiements — Sorabel compris. Inversement, un corpus Kiabi régénéré et
+  # commité sur main reconstruit l'image et redéploie Sorabel (docs/EXPLOITATION.md §10.1).
+  #
   # Écart avec la version initiale de ce fichier : le Dockerfile déclare trois
   # ARG non secrets que l'étape `index` exige pour aboutir — AZURE_EMBEDDING_ENDPOINT,
   # AZURE_OPENAI_ENDPOINT et AZURE_OPENAI_EMBEDDING_DEPLOYMENT (endpoint et nom de
@@ -116,9 +121,10 @@ steps:
   # rien tant que les données des deux enseignes voyagent dans la même image
   # (docs/EXPLOITATION.md §10.2).
   #
-  # Dernière étape, après celles de Sorabel : une erreur propre à la démonstration (droit
-  # manquant, quota) fait échouer le build sans avoir empêché sorabel-mcp ni sorabel-front de se
-  # déployer.
+  # Dernière étape, après celles de Sorabel : une erreur propre à CE déploiement (droit
+  # manquant, quota Cloud Run) fait échouer le build sans avoir empêché sorabel-mcp ni
+  # sorabel-front de se déployer. Cela ne vaut que pour le déploiement : l'index Kiabi est
+  # construit dans l'étape `build` (voir plus haut), et son échec empêche tout déploiement.
   - id: deploy-kiabi-mcp
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
