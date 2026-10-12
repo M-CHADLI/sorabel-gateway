@@ -1,0 +1,10 @@
+{
+  "answer_question": "Réponse rédigée avec sources, à partir du corpus documentaire Sorabel.\n        N'utilisez PAS ce tool pour obtenir des extraits bruts : voyez search_docs.\n        Statuts possibles : ok, hors_corpus (aucune réponse trouvée, à afficher tel quel,\n        pas comme une panne).",
+  "search_docs": "Recherche documentaire hybride : extraits bruts + scores, AUCUNE génération.\n        N'utilisez PAS ce tool pour obtenir une réponse rédigée : voyez answer_question.",
+  "get_document": "Document canonique complet, par doc_id OU par (reference + version optionnelle\n        — version courante par défaut si omise). Voir list_sources ou search_docs pour\n        obtenir un doc_id ou une référence. Statuts : ok, hors_schema (introuvable, ou\n        reference ambiguë entre plusieurs types de document), non_autorise (collection\n        hors périmètre du profil).",
+  "list_sources": "Inventaire des documents indexés et de leurs versions, reflète le périmètre\n        du profil (une note confidentielle hors périmètre n'apparaît pas).",
+  "ask_database": "Question en langage naturel sur les données Sorabel (produits, stocks, clients,\n        commandes, ventes). Utilisez ce tool quand la question demande un CALCUL ou un\n        AGRÉGAT. Lecture seule ; renvoie toujours le SQL exécuté ou rejeté. Statuts :\n        ok, hors_schema, non_autorise, refuse_ecriture.",
+  "get_schema": "Schéma commenté des tables SQL tel que ce profil le voit (mêmes colonnes que\n        celles disponibles via ask_database).",
+  "check_stock": "Stock par entrepôt pour UNE référence précise (format REF-XXXX). Utilisez ce\n        tool quand la question porte sur une référence précise, pas un agrégat — pour un\n        agrégat (ex. \"quelles références sont sous le seuil ?\"), voyez ask_database.",
+  "order_status": "Statut, date et montant d'UNE commande précise (format CMD-AAAA-NNNN)."
+}

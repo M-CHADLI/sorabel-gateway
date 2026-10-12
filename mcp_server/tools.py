@@ -19,6 +19,7 @@ import time
 from typing import Any, Callable
 
 from gouvernance.journal import journaliser
+from sorabel_enseigne import enseigne_active
 from sorabel_rag.documents import lister_sources, obtenir_document
 from sorabel_rag.generation import repondre
 from sorabel_rag.recherche import rechercher
@@ -26,6 +27,21 @@ from sorabel_sql.tools import ask_database as _sql_ask_database
 from sorabel_sql.tools import check_stock as _sql_check_stock
 from sorabel_sql.tools import get_schema as _sql_get_schema
 from sorabel_sql.tools import order_status as _sql_order_status
+
+# Les docstrings des tools deviennent leurs descriptions, envoyées aux clients par
+# `tools/list` : c'est sur elles qu'un LLM client choisit son tool. Un serveur Kiabi qui y
+# annoncerait « le corpus documentaire Sorabel » le tromperait sur ce qu'il interroge. Une
+# docstring ne pouvant pas être une f-string, elles portent `{enseigne}`, remplacé par le
+# libellé à l'enregistrement.
+LIBELLE_ENSEIGNE = enseigne_active().libelle
+
+
+def _description(func: Callable) -> str:
+    """Docstring d'un tool avec `{enseigne}` résolu. `replace` et non `format` : une accolade
+    littérale (un exemple JSON) ne doit pas empêcher le serveur de démarrer. `or ""` : sous
+    `python -OO` les docstrings disparaissent, et un tool sans docstring ne doit pas faire
+    tomber l'enregistrement des huit."""
+    return (func.__doc__ or "").replace("{enseigne}", LIBELLE_ENSEIGNE)
 
 
 def enregistrer_tools(mcp, resolveur_perimetre: Callable[[], Any]) -> None:
@@ -94,7 +110,7 @@ def enregistrer_tools(mcp, resolveur_perimetre: Callable[[], Any]) -> None:
             # amputée du paramètre `perimetre` : il est injecté par ce décorateur, jamais
             # fourni par l'appelant, et ne doit donc jamais apparaître dans le schéma.
             enveloppe.__name__ = func.__name__
-            enveloppe.__doc__ = func.__doc__
+            enveloppe.__doc__ = _description(func)
             # eval_str=True : ce module utilise `from __future__ import annotations`, donc les
             # annotations de `func` sont des chaînes ("dict", "str | None", ...) tant qu'on ne
             # les évalue pas explicitement. Sans ça, FastMCP verrait un type de retour littéral
@@ -109,7 +125,7 @@ def enregistrer_tools(mcp, resolveur_perimetre: Callable[[], Any]) -> None:
     @mcp.tool()
     @_gouverne("answer_question")
     def answer_question(question: str, *, perimetre) -> dict:
-        """Réponse rédigée avec sources, à partir du corpus documentaire Sorabel.
+        """Réponse rédigée avec sources, à partir du corpus documentaire {enseigne}.
         N'utilisez PAS ce tool pour obtenir des extraits bruts : voyez search_docs.
         Statuts possibles : ok, hors_corpus (aucune réponse trouvée, à afficher tel quel,
         pas comme une panne)."""
@@ -158,7 +174,7 @@ def enregistrer_tools(mcp, resolveur_perimetre: Callable[[], Any]) -> None:
     @mcp.tool()
     @_gouverne("ask_database")
     def ask_database(question: str, *, perimetre) -> dict:
-        """Question en langage naturel sur les données Sorabel (produits, stocks, clients,
+        """Question en langage naturel sur les données {enseigne} (produits, stocks, clients,
         commandes, ventes). Utilisez ce tool quand la question demande un CALCUL ou un
         AGRÉGAT. Lecture seule ; renvoie toujours le SQL exécuté ou rejeté. Statuts :
         ok, hors_schema, non_autorise, refuse_ecriture."""
