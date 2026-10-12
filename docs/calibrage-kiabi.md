@@ -102,3 +102,34 @@ Score : passe 1 / passe 2 / passe 3 (« — » : non mesurée). Décision : ce q
 
 Les questions de `eval/questions_rag_kiabi.jsonl` reprennent une partie de celles-ci : ce
 jeu sert l'évaluation du retrieval (E6), il ne valide pas le seuil de façon indépendante.
+
+## Correctif : le seuil lit la meilleure note, pas le premier résultat
+
+**Constat (relecture de la branche, vérifié en réel le 2026-10-12).** Le tri place en tête le
+document dont la référence est citée dans la question, même si le reranker lui donne moins
+qu'à un autre. Le seuil de 0,75 lisait ce premier résultat : sur « Le jean REF-1024 a rétréci
+au lavage, que faire ? » et « Le client veut échanger le REF-2422 pour une autre taille,
+quelle procédure ? », la fiche du produit (note 0,5) précédait la procédure SAV (note 1,0) et
+la question était refusée à tort (`hors_corpus`) alors qu'un document y répondait. La mesure
+initiale ne comportait que des questions « référence seule » ou « langage naturel seul » :
+aucune question mixte, la forme pourtant la plus courante d'une conversation de support.
+
+**Correctif.** Une enseigne qui déclare son propre `rag.seuil_refus` lit la meilleure note
+brute des résultats (`sorabel_rag.generation.score_de_decision`). Sorabel, qui n'en déclare
+pas, garde la lecture historique du premier résultat : son comportement est inchangé à
+l'octet (`tests/test_enseigne_seuil_refus.py`, `tests/test_score_de_decision.py`).
+
+**Re-mesure après correctif** (reranker réel, profil commercial, index reconstruit avec les
+libellés « Fiche produit » / « Guide d'entretien ») : 4 questions mixtes sur 4 répondues,
+3 questions hors corpus sur 3 refusées.
+
+**Limites assumées.**
+- Le reranker n'est pas déterministe et le barème n'a que trois niveaux (0 / 0,5 / 1) : tout
+  seuil dans ]0,5 ; 1] est équivalent. 0,75 n'est donc pas une « marge » mesurée mais le choix
+  de refuser les notes « sujet proche » (0,5), qui laissaient passer des questions hors corpus.
+- Les mesures sont à n = 1 par question : lire « non observé sur N mesures », pas « n'arrive
+  pas ».
+- Le jeu `eval/questions_rag_kiabi.jsonl` n'est pas indépendant du calibrage ; ses questions
+  en langage naturel reprennent de près les titres des documents. Il porte `attendu_doc_ids`
+  (plus strict que `attendu_reference`, et propre à Kiabi) ; KIA-29 (politique tarifaire) n'est
+  visible que des profils `commercial` et `admin`.

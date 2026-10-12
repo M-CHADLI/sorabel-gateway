@@ -7,7 +7,7 @@ alternatives écartées restent dans `docs/conception.md` ; le cahier des charge
 
 État au 10 septembre 2026 : chantiers RAG, Text-to-SQL, gouvernance, serveur MCP et front
 livrés, puis mis en état de production sur GCP (transport HTTP, authentification OAuth 2.1,
-identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **346 tests** au
+identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **453 tests** au
 vert. La vitrine a depuis été **provisionnée et vérifiée sur un projet GCP réel**
 (`sorabel-vitrine-2026`) : les deux services tournent, le parcours de démonstration complet
 fonctionne derrière IAP, et un client MCP tiers authentifié par OAuth Google obtient
@@ -157,7 +157,7 @@ scripts/
   demo_mcp_http.py    serveur MCP HTTP de démonstration SANS authentification — hors
                      périmètre de production, voir §14
 
-tests/               42 fichiers, 346 tests
+tests/               50 fichiers, 453 tests
 data/                corpus, sorabel.db, canonique/, chroma/  (hors git)
 logs/appels.jsonl    journal d'appels en stdio (hors git) ; en HTTP, voir SORABEL_JOURNAL
 ```
@@ -195,8 +195,11 @@ enseignes_disponibles() -> list[str]
 
 `Enseigne.chemins` porte `corpus`, `canonique`, `chroma`, `base_sql`, `gouvernance`,
 `journal` ; `Enseigne` porte aussi `collection`, `presentation`, `pied_de_page`, `nom_base`,
-`commentaires_sql` et `front` (textes et couleurs du poste de travail, table `[front]`
-facultative — voir §9). Les constantes de module (`CORPUS`, `CHEMIN_DB`, `PROMPT_SYSTEME`…)
+`commentaires_sql`, `libelles_types` (libellé affiché pour chaque type de document, table
+`[rag.libelles_types]` facultative : « Guide d'entretien » pour Kiabi, « Notice
+d'installation » par défaut ; ils entrent dans le texte embeddé, donc **les changer impose de
+réindexer**) et `front` (textes et couleurs du poste de travail, table `[front]` facultative —
+voir §9). Les constantes de module (`CORPUS`, `CHEMIN_DB`, `PROMPT_SYSTEME`…)
 gardent leur nom mais sont évaluées à l'import depuis l'enseigne active : changer
 d'enseigne, c'est changer de processus. Une enseigne inconnue lève `ValueError` à l'import —
 jamais de repli silencieux sur Sorabel ; `enseigne_active()` fige l'enseigne à son premier
@@ -206,7 +209,11 @@ enseigne).
 
 `Enseigne.seuil_refus` est optionnel : `None` (Sorabel) garde le `SEUIL_REFUS` du moteur.
 `generation.SEUIL_REFUS_ENSEIGNE` porte le seuil de l'enseigne active, figé à l'import.
-Kiabi déclare 0.75, mesuré dans `docs/calibrage-kiabi.md`.
+Kiabi déclare 0.75, mesuré dans `docs/calibrage-kiabi.md`. Une enseigne qui déclare son
+seuil le lit sur la **meilleure note brute** des résultats (`generation.score_de_decision`) ;
+Sorabel garde la lecture du premier résultat : le tri place en tête le document dont la
+référence est citée, même moins bien noté, ce qui refusait à tort les questions mixtes
+« référence + langage naturel ».
 
 ### Forme de retour des tools
 
@@ -559,7 +566,7 @@ SORABEL_FRONT_LOCAL=1 streamlit run front/app_client.py --server.address=127.0.0
                                          # poste local, sans IAP, boucle locale seulement (make front)
 python scripts/mcp_client.py support answer_question '{"question": "..."}'
 
-python -m pytest -q                       # 346 tests
+python -m pytest -q                       # 453 tests
 ```
 
 **Poste local multi-enseigne (`make front`).** La cible construit d'abord, enseigne par

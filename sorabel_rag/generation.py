@@ -28,6 +28,22 @@ def seuil_refus_de(enseigne: Enseigne) -> float:
 
 # Figé à l'import, comme PROMPT_SYSTEME : une enseigne par processus.
 SEUIL_REFUS_ENSEIGNE = seuil_refus_de(enseigne_active())
+SEUIL_SUR_MEILLEURE_NOTE = enseigne_active().seuil_refus is not None
+
+
+def score_de_decision(resultats: list[Resultat]) -> float:
+    """La note que le seuil de refus compare.
+
+    Le tri place en tête le document dont la référence est citée dans la question, même si
+    le reranker lui donne moins qu'à un autre : « le jean REF-1024 a rétréci, que faire ? »
+    met la fiche du jean (note 0,5) devant la procédure « article rétréci » (note 1,0). Lire
+    le premier résultat refuserait alors à tort, alors qu'un document répond. Une enseigne
+    qui a calibré son propre seuil (`rag.seuil_refus`) lit donc la meilleure note brute ;
+    Sorabel garde la lecture historique du premier résultat, inchangée à l'octet.
+    """
+    if SEUIL_SUR_MEILLEURE_NOTE:
+        return max(r.score for r in resultats)
+    return resultats[0].score
 
 
 def _construire_prompt(question: str, resultats: list[Resultat]) -> list[dict]:
@@ -65,7 +81,7 @@ def repondre(question: str, k: int = 5, perimetre=None) -> dict:
     resultats = rechercher(
         question, k=k, config="hybride_rerank", collections_autorisees=collections
     )
-    if not resultats or resultats[0].score < SEUIL_REFUS_ENSEIGNE:
+    if not resultats or score_de_decision(resultats) < SEUIL_REFUS_ENSEIGNE:
         return {
             "statut": "hors_corpus",
             "message": "Je ne trouve pas de réponse à cette question dans le corpus documentaire.",

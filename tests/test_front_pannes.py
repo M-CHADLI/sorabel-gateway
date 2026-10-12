@@ -111,8 +111,13 @@ def test_une_autre_session_du_cache_n_est_pas_retiree(monkeypatch):
     assert morte.arretee and not neuve.arretee
 
 
-def _fil(nom: str) -> threading.Thread:
-    return next(t for t in threading.enumerate() if t.name == nom)
+def _attendre_arret(nom: str) -> None:
+    """Le fil de la session doit être arrêté. Il peut l'être déjà au moment où on le cherche
+    (suite chargée : la boucle s'arrête avant que le test ne regarde) : « introuvable » vaut
+    alors « arrêté », et non une erreur."""
+    for fil in [t for t in threading.enumerate() if t.name == nom]:
+        fil.join(timeout=10)
+        assert not fil.is_alive()
 
 
 def test_l_echec_du_demarrage_arrete_le_thread_et_la_boucle(monkeypatch):
@@ -124,9 +129,7 @@ def test_l_echec_du_demarrage_arrete_le_thread_et_la_boucle(monkeypatch):
     with pytest.raises(OSError):
         mcp_client._SessionPersistante("support", "kiabi")
 
-    fil = _fil("mcp-kiabi-support")
-    fil.join(timeout=10)
-    assert not fil.is_alive()
+    _attendre_arret("mcp-kiabi-support")
 
 
 def test_une_vraie_session_qui_leve_a_l_appel_est_arretee(monkeypatch):
@@ -143,9 +146,7 @@ def test_une_vraie_session_qui_leve_a_l_appel_est_arretee(monkeypatch):
     resultat = routage.appeler("kiabi", "check_stock", {}, assertion=None, profil="commercial")
     assert resultat == {"statut": "erreur", "message": "Serveur MCP local indisponible."}
     assert mcp_client._sessions == {}
-    fil = _fil("mcp-kiabi-commercial")
-    fil.join(timeout=10)
-    assert not fil.is_alive()
+    _attendre_arret("mcp-kiabi-commercial")
 
 
 # --- passerelle : l'erreur de transport arrive dans un ExceptionGroup ---------------------

@@ -24,7 +24,7 @@ répète pas son contenu : il donne les conventions de travail.
 Les six phases applicatives sont livrées : ingestion, RAG hybride, Text-to-SQL, gouvernance,
 serveur MCP, front Streamlit. Le chantier `gcp-vitrine` les a ensuite mises en état de
 production sur GCP : transport HTTP, authentification OAuth 2.1, identités Firestore, image
-Docker, CI/CD Cloud Build (détails dans `docs/EXPLOITATION.md`). **346 tests** passent
+Docker, CI/CD Cloud Build (détails dans `docs/EXPLOITATION.md`). **453 tests** passent
 (`python -m pytest -q`).
 
 Reste ouvert : l'évaluation E6 (`eval/run_eval.py` n'existe pas — voir §12 du dossier
@@ -34,7 +34,7 @@ technique).
 
 ```bash
 uv sync                                   # Python 3.12, voir .python-version
-python -m pytest -q                       # 346 tests
+python -m pytest -q                       # 453 tests
 
 python scripts/seed_gouvernance.py        # gouvernance.db
 python scripts/ingerer.py                 # corpus → data/canonique/
