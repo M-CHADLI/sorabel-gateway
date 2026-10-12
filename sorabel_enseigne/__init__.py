@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import functools
 import os
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
@@ -25,6 +26,33 @@ ENSEIGNE_PAR_DEFAUT = "sorabel"
 
 # Nom de l'enseigne du processus, posé au premier appel réussi d'`enseigne_active()`.
 _ENSEIGNE_FIGEE: str | None = None
+
+# Clés admises dans la table `[front]`. Le front porte les valeurs par défaut (les textes
+# Sorabel actuels) : une clé mal orthographiée passerait sinon inaperçue, et une
+# démonstration afficherait le texte Sorabel sans la moindre erreur.
+CLES_FRONT = (
+    "titre_page",
+    "nom_produit",
+    "mention",
+    "resume_corpus",
+    "couleur_accent",
+    "couleur_fond",
+    "references_exemple",
+    "questions_exemple",
+    "question_sql_exemple",
+    "commande_exemple",
+    "document_exemple",
+)
+
+# Les couleurs finissent dans une feuille de style injectée telle quelle par le front : une
+# valeur arbitraire y ouvrirait une règle CSS de plus, ou fermerait la balise `<style>`.
+MOTIF_COULEUR = re.compile(r"#[0-9A-Fa-f]{6}")
+
+# Familles de clés de `[front]`, pour valider le type de chaque valeur au chargement.
+_CLES_COULEUR = ("couleur_accent", "couleur_fond")
+_CLES_LISTE = ("references_exemple", "questions_exemple")
+# `mention` est la seule clé qui peut être vide : c'est le défaut Sorabel (aucun bandeau).
+_CLES_TEXTE_VIDE_ADMIS = ("mention",)
 
 
 @dataclass(frozen=True)
@@ -47,6 +75,50 @@ class Enseigne:
     pied_de_page: str
     nom_base: str
     commentaires_sql: Mapping[str, str]
+    front: Mapping[str, object]
+
+
+def _valider_front(table: dict, chemin_toml: Path) -> None:
+    """Un type ou un format inutilisable doit échouer ici, en nommant la clé, plutôt que de
+    lever une erreur obscure (ou pire, d'afficher un texte vide) au milieu d'une session."""
+
+    def erreur(cle: str, attendu: str) -> ValueError:
+        return ValueError(f"{chemin_toml} : [front] {cle} = {table[cle]!r} — attendu : {attendu}")
+
+    for cle, valeur in table.items():
+        if cle in _CLES_LISTE:
+            if not isinstance(valeur, list) or not valeur:
+                raise erreur(cle, "une liste non vide de chaînes")
+            if not all(isinstance(element, str) and element.strip() for element in valeur):
+                raise erreur(cle, "des chaînes non vides")
+            if len(set(valeur)) != len(valeur):
+                # Un doublon donnerait deux boutons d'exemple de même clé côté front.
+                raise erreur(cle, "des valeurs distinctes")
+        elif not isinstance(valeur, str):
+            raise erreur(cle, "une chaîne")
+        elif cle in _CLES_COULEUR:
+            if not MOTIF_COULEUR.fullmatch(valeur):
+                raise erreur(cle, "une couleur #RRGGBB")
+        elif not valeur.strip() and cle not in _CLES_TEXTE_VIDE_ADMIS:
+            raise erreur(cle, "une chaîne non vide")
+
+
+def _lire_front(brut: dict, chemin_toml: Path) -> Mapping[str, object]:
+    """Listes TOML converties en tuples : une enseigne est partagée par cache entre toutes
+    les sessions du front, une liste mutable modifiée par l'une le serait pour toutes."""
+    table = brut.get("front", {})
+    if not isinstance(table, dict):
+        raise ValueError(f"{chemin_toml} : [front] doit être une table")
+    inconnues = sorted(set(table) - set(CLES_FRONT))
+    if inconnues:
+        raise ValueError(
+            f"{chemin_toml} : clé inconnue dans [front] : {', '.join(inconnues)} — "
+            f"admises : {', '.join(CLES_FRONT)}"
+        )
+    _valider_front(table, chemin_toml)
+    return MappingProxyType(
+        {cle: tuple(valeur) if isinstance(valeur, list) else valeur for cle, valeur in table.items()}
+    )
 
 
 def charger_enseigne(chemin_toml: Path) -> Enseigne:
@@ -66,6 +138,7 @@ def charger_enseigne(chemin_toml: Path) -> Enseigne:
             pied_de_page=brut["extraction"]["pied_de_page"],
             nom_base=brut["sql"]["nom_base"],
             commentaires_sql=MappingProxyType(dict(brut["sql"].get("commentaires", {}))),
+            front=_lire_front(brut, chemin_toml),
         )
     except KeyError as cle:
         raise ValueError(f"{chemin_toml} : clé manquante {cle}") from None

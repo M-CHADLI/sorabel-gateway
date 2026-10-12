@@ -24,7 +24,7 @@ répète pas son contenu : il donne les conventions de travail.
 Les six phases applicatives sont livrées : ingestion, RAG hybride, Text-to-SQL, gouvernance,
 serveur MCP, front Streamlit. Le chantier `gcp-vitrine` les a ensuite mises en état de
 production sur GCP : transport HTTP, authentification OAuth 2.1, identités Firestore, image
-Docker, CI/CD Cloud Build (détails dans `docs/EXPLOITATION.md`). **218 tests** passent
+Docker, CI/CD Cloud Build (détails dans `docs/EXPLOITATION.md`). **346 tests** passent
 (`python -m pytest -q`).
 
 Reste ouvert : l'évaluation E6 (`eval/run_eval.py` n'existe pas — voir §12 du dossier
@@ -34,14 +34,16 @@ technique).
 
 ```bash
 uv sync                                   # Python 3.12, voir .python-version
-python -m pytest -q                       # 218 tests
+python -m pytest -q                       # 346 tests
 
 python scripts/seed_gouvernance.py        # gouvernance.db
 python scripts/ingerer.py                 # corpus → data/canonique/
 python scripts/indexer.py                 # canoniques → Chroma + BM25
 
 SORABEL_PROFIL=commercial python -m mcp_server.serveur   # serveur MCP, stdio (développement)
-streamlit run front/app_client.py
+streamlit run front/app_client.py                        # derrière IAP
+make front                                # poste local sans IAP, 127.0.0.1 seulement (SORABEL_FRONT_LOCAL=1)
+SORABEL_FRONT_LOCAL=1 streamlit run front/app_client.py --server.address=127.0.0.1   # sans make
 ```
 
 Il n'y a ni linter ni formateur configuré : suivre le style du fichier voisin.
@@ -72,7 +74,9 @@ projet.
 - **Le front n'applique aucune règle d'accès.** Il reflète ce que le serveur lui a laissé
   voir : `front/depot.py::tools_accordes()` lit la matrice directement, plus jamais
   `tools/list`. Ne pas réintroduire de chemin d'accès direct au pipeline : une page de debug
-  qui contournait la gouvernance a existé et a été retirée.
+  qui contournait la gouvernance a existé et a été retirée. Tout appel de tool passe par
+  `front/routage.py`, vers un serveur MCP (HTTP en production, stdio en mode local) — rien
+  dans `front/` n'importe `sorabel_rag` ni `sorabel_sql`.
 - **Le gain de l'hybride doit être mesuré** (E6) sur `eval/questions_rag.jsonl`, questions par
   référence exacte et en langage naturel **rapportées séparément** — une moyenne globale
   masque ce qu'on cherche à démontrer. Métriques : Recall@5, MRR, Hit@1.
@@ -103,7 +107,16 @@ défaut (développement, tests, `scripts/mcp_client.py`) ou `http` (streamable, 
 `stdout` bascule le journal vers Cloud Logging au lieu de `logs/appels.jsonl` (production).
 `SORABEL_DEPOT` : `firestore` choisit `gouvernance/identites_firestore.py` (production),
 toute autre valeur (ou absence) reste sur `gouvernance/identites.py` (SQLite). Front :
-`SORABEL_URL_MCP`, où joindre le serveur MCP déployé (`front/passerelle.py`).
+`SORABEL_URL_MCP`, où joindre le serveur MCP déployé de Sorabel (`front/passerelle.py`) ;
+`SORABEL_URL_MCP_<ENSEIGNE>` (`SORABEL_URL_MCP_KIABI`…), celui d'une autre enseigne — sans
+elle, l'enseigne n'est pas servie en HTTP, jamais de repli sur l'URL Sorabel.
+`SORABEL_FRONT_LOCAL=1` (`make front`) : mode local, sans IAP, sujet `local:developpeur`,
+toutes les enseignes servies, appels par un serveur MCP stdio par (profil, enseigne) ;
+`front/routage.py` lève `RuntimeError` si `K_SERVICE` est définie — interdit sur Cloud Run.
+Le profil se choisit à l'écran sans IAP : le poste ne doit écouter que sur la boucle locale.
+`make front` passe `--server.address=127.0.0.1`, et `front/app_client.py` refuse de
+démarrer en mode local si `server.address` n'est ni `127.0.0.1`, ni `localhost`, ni `::1`
+(Streamlit écoute sur toutes les interfaces tant qu'elle n'est pas posée).
 Authentification HTTP (`mcp_server/authentification.py`) : `SORABEL_OIDC_ISSUER` /
 `SORABEL_OIDC_AUDIENCE` / `SORABEL_OIDC_JWKS` pour les clients MCP tiers (Google Identity
 Platform), `SORABEL_IAP_AUDIENCE` pour l'assertion relayée par le front derrière
@@ -116,7 +129,18 @@ l'environnement du serveur doit **hériter** de `os.environ` (sinon `WinError 10
 
 **Streamlit** — le style de `front/app_client.py` dépend de la structure interne du DOM. En
 cas de règle CSS sans effet, vérifier les `data-testid` réels dans le bundle installé plutôt
-que de supposer une profondeur.
+que de supposer une profondeur. Plusieurs enseignes servies : une page de choix précède
+l'inscription (`st.session_state["enseigne"]`) ; **une seule** (production Sorabel) : aucune
+page de choix, rendu inchangé. Textes, couleurs et exemples viennent de la table `[front]`
+facultative de `enseigne.toml` ; les défauts — les textes Sorabel — vivent une seule fois
+dans `DEFAUTS_FRONT` (`front/app_client.py`), et une clé inconnue de `[front]` lève
+`ValueError` au chargement (`sorabel_enseigne.CLES_FRONT`) — comme un type ou un format
+invalide (couleur hors `#RRGGBB`, liste réduite à une chaîne, doublon, liste vide). Toute
+clé ajoutée à `CLES_FRONT` doit avoir son défaut dans `DEFAUTS_FRONT` (un test les compare).
+Les teintes voisines de l'accent (foncé, voile, ombres, focus) sont dérivées par
+`front/couleurs.py` : un littéral bleu ajouté à `STYLE` habillerait Kiabi en Sorabel.
+`st.set_page_config` reste la première commande Streamlit : l'enseigne se résout avant,
+sans appel `st.*` d'affichage.
 
 ## Données
 

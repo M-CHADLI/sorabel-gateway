@@ -34,3 +34,22 @@ nom_base = "Kiabi"
 "clients.raison_sociale" = "nom du magasin"
 "clients.segment" = "franchise | succursale | outlet"
 "commandes.client_id" = "clé vers clients.id — une commande est un réassort de magasin"
+
+# Textes et couleurs du front pour cette enseigne. Sorabel n'a pas de table [front] : le
+# front applique alors ses défauts, qui sont ses textes actuels.
+[front]
+titre_page = "Kiabi — Poste magasin (démonstration)"
+nom_produit = "Kiabi Data Gateway"
+mention = "Démonstration non officielle : données entièrement fictives, sans lien avec l'enseigne Kiabi."
+resume_corpus = "175 documents indexés"
+couleur_accent = "#1E5BC6"
+couleur_fond = "#0B2E6B"
+references_exemple = ["REF-1024", "REF-1141", "REF-1505", "REF-2422"]
+questions_exemple = [
+    "À quelle température laver le jean slim brut REF-1024 ?",
+    "Quelle est la procédure pour un échange de taille ?",
+    "Que faire pour un article décoloré au lavage ?",
+]
+question_sql_exemple = "Combien de réassorts en avril ?"
+commande_exemple = "CMD-2025-0002"
+document_exemple = "fiche_technique:REF-1024:v2.1"

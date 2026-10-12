@@ -64,7 +64,7 @@ CORPUS = $(wildcard $(CORPUS_DIR)/*/*)
 
 .DEFAULT_GOAL := help
 .PHONY: help install generer-kiabi enseignes verifier donnees reindexer test serveur demo contraste \
-        demo-http inspecteur journal vitrine gcp-statut clean reset-donnees
+        demo-http inspecteur front journal vitrine gcp-statut clean reset-donnees
 
 ##@ Mise en route
 
@@ -139,6 +139,21 @@ inspecteur: donnees .env ## MCP Inspector (navigateur) branché sur le serveur s
 
 demo-http: donnees .env ## Serveur HTTP :8080 SANS authentification, pour un playground MCP (PROFIL=…)
 	$(PY) scripts/demo_mcp_http.py --profil $(PROFIL)
+
+# Le front local joint un serveur MCP stdio par enseigne et par profil (front/routage.py) :
+# la matrice reste appliquée par le serveur, comme en production. front/routage.py refuse
+# ce mode si K_SERVICE est défini, donc sur Cloud Run.
+# Il sert TOUTES les enseignes présentes dans enseignes/ : leurs données sont donc construites
+# d'abord, une enseigne à la fois (un sous-make par enseigne, car les chemins du .mk ne
+# valent que pour l'enseigne active). Sans ça, choisir Kiabi à l'écran lancerait un serveur
+# sans index. Pas d'accent dans l'echo : voir la remarque sur les recettes plus haut.
+# --server.address=127.0.0.1 : sans IAP, le profil se choisit à l'écran — le poste ne doit
+# pas écouter sur le réseau (front/app_client.py refuse de démarrer sinon).
+ENSEIGNES_PRESENTES := $(sort $(patsubst enseignes/%/enseigne.toml,%,$(wildcard enseignes/*/enseigne.toml)))
+
+front: .env ## Poste Streamlit local sans IAP, 127.0.0.1 seulement : construit d'abord les données de chaque enseigne présente
+	@for e in $(ENSEIGNES_PRESENTES); do 	  echo "Donnees de l'enseigne $$e"; 	  "$(MAKE)" --no-print-directory donnees ENSEIGNE=$$e || exit 1; 	done
+	SORABEL_FRONT_LOCAL=1 $(PY) -m streamlit run front/app_client.py --server.address=127.0.0.1
 
 ##@ Production (GCP)
 

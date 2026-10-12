@@ -7,7 +7,7 @@ alternatives écartées restent dans `docs/conception.md` ; le cahier des charge
 
 État au 10 septembre 2026 : chantiers RAG, Text-to-SQL, gouvernance, serveur MCP et front
 livrés, puis mis en état de production sur GCP (transport HTTP, authentification OAuth 2.1,
-identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **218 tests** au
+identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **346 tests** au
 vert. La vitrine a depuis été **provisionnée et vérifiée sur un projet GCP réel**
 (`sorabel-vitrine-2026`) : les deux services tournent, le parcours de démonstration complet
 fonctionne derrière IAP, et un client MCP tiers authentifié par OAuth Google obtient
@@ -136,13 +136,16 @@ mcp_server/
                      Platform, audience vérifiée par émetteur (transport HTTP uniquement)
 
 front/
-  app_client.py      poste de travail (navigation 2 niveaux, 8 écrans, inscription et
-                     changement de profil de démonstration)
+  app_client.py      poste de travail (navigation 2 niveaux, 8 écrans, choix d'enseigne si
+                     plusieurs sont servies, inscription et changement de profil de démonstration)
+  couleurs.py        palette dérivée de la couleur d'accent d'une enseigne (stdlib seule)
+  routage.py         quel serveur MCP répond pour une enseigne : HTTP via passerelle.py
+                     (production), ou stdio via mcp_client.py en mode local (SORABEL_FRONT_LOCAL=1)
   passerelle.py      pont HTTP vers le serveur MCP déployé : relaie l'assertion IAP sans la
                      vérifier, traduit les pannes de transport en `{"statut": "erreur"}`
   depot.py           choix du dépôt d'identités (via gouvernance.depots) et calcul des tools
                      accordés à un profil, lus directement dans la matrice
-  mcp_client.py      pont stdio historique — inchangé, conservé pour le développement local
+  mcp_client.py      pont stdio : un serveur MCP par (profil, enseigne), utilisé par le mode local
 
 scripts/
   ingerer.py         corpus → data/canonique/*.json
@@ -154,7 +157,7 @@ scripts/
   demo_mcp_http.py    serveur MCP HTTP de démonstration SANS authentification — hors
                      périmètre de production, voir §14
 
-tests/               33 fichiers, 218 tests
+tests/               42 fichiers, 346 tests
 data/                corpus, sorabel.db, canonique/, chroma/  (hors git)
 logs/appels.jsonl    journal d'appels en stdio (hors git) ; en HTTP, voir SORABEL_JOURNAL
 ```
@@ -191,8 +194,9 @@ enseignes_disponibles() -> list[str]
 ```
 
 `Enseigne.chemins` porte `corpus`, `canonique`, `chroma`, `base_sql`, `gouvernance`,
-`journal` ; `Enseigne` porte aussi `collection`, `presentation`, `pied_de_page`, `nom_base`
-et `commentaires_sql`. Les constantes de module (`CORPUS`, `CHEMIN_DB`, `PROMPT_SYSTEME`…)
+`journal` ; `Enseigne` porte aussi `collection`, `presentation`, `pied_de_page`, `nom_base`,
+`commentaires_sql` et `front` (textes et couleurs du poste de travail, table `[front]`
+facultative — voir §9). Les constantes de module (`CORPUS`, `CHEMIN_DB`, `PROMPT_SYSTEME`…)
 gardent leur nom mais sont évaluées à l'import depuis l'enseigne active : changer
 d'enseigne, c'est changer de processus. Une enseigne inconnue lève `ValueError` à l'import —
 jamais de repli silencieux sur Sorabel ; `enseigne_active()` fige l'enseigne à son premier
@@ -423,15 +427,82 @@ d'identités. Une entrée n'apparaît que si la matrice accorde le tool correspo
 courant. Un bandeau « mode démonstration » rappelle explicitement qu'un visiteur choisit
 lui-même son profil — ce que la production réelle ne ferait jamais.
 
-`front/passerelle.py` — le pont vers le serveur MCP déployé, **désormais le seul chemin
-emprunté par `app_client.py`**. Identity-Aware Proxy authentifie la personne avant que la
+**Plusieurs enseignes.** Le front ne détient aucune donnée : il choisit seulement *quel*
+serveur MCP interroger, chaque serveur ne servant qu'une enseigne (figée par processus).
+L'enseigne de la session vit dans `st.session_state["enseigne"]`.
+
+- **Une seule enseigne servie** (la production Sorabel, dont l'image ne contient que
+  `enseignes/sorabel/enseigne.toml`) : elle est choisie d'office, **aucune page de choix**,
+  et le rendu est celui d'avant le multi-enseigne, à la chaîne et à la couleur près.
+- **Plusieurs enseignes servies** : une page d'accueil propose une carte par enseigne
+  (libellé, nom du produit, mention éventuelle), avant la page d'inscription ; la barre
+  latérale porte un bouton « Changer d'enseigne ». Le profil est conservé : la matrice est
+  commune à toutes les enseignes.
+
+En HTTP, une enseigne est servie si elle est Sorabel (URL historique `SORABEL_URL_MCP`) ou si
+`SORABEL_URL_MCP_<ENSEIGNE>` est définie (`SORABEL_URL_MCP_KIABI`…). Jamais de repli sur
+l'URL Sorabel pour une autre enseigne : une question Kiabi partirait vers les données
+Sorabel, sous l'apparence d'une réponse normale.
+
+**Textes et couleurs par enseigne** — table facultative `[front]` de
+`enseignes/<nom>/enseigne.toml`, exposée par `Enseigne.front` (mapping immuable, listes
+converties en tuples). Clés : `titre_page`, `nom_produit`, `mention` (bandeau
+d'avertissement, vide = aucun), `resume_corpus` (ligne « Corpus » du rappel, ex.
+« 175 documents indexés »), `couleur_accent` et `couleur_fond` (`#RRGGBB`),
+`references_exemple`, `questions_exemple`, `question_sql_exemple`, `commande_exemple`,
+`document_exemple`. Les valeurs par défaut sont les textes Sorabel, définis une seule fois
+dans `DEFAUTS_FRONT` (`front/app_client.py`, dont les clés égalent `CLES_FRONT`) ; Sorabel
+ne déclare pas de table `[front]`. Une clé inconnue, un type inattendu (chaîne à la place
+d'une liste, texte vide hors `mention`), un doublon dans une liste d'exemples, une liste
+vide ou une couleur hors `#RRGGBB` lèvent `ValueError` au chargement, en nommant la clé :
+une faute de frappe afficherait sinon les textes Sorabel dans une démonstration Kiabi, sans
+la moindre erreur.
+
+**Habillage.** `front/couleurs.py` dérive de `couleur_accent` les teintes voisines de la
+feuille de style (accent foncé, voile, bordure, début de dégradé des boutons, composantes
+RVB des ombres et de l'anneau de focus) ; `couleur_fond` ouvre le dégradé de la barre
+latérale. Les coefficients sont calibrés pour que l'accent Sorabel redonne la feuille du tag
+`sorabel-v1` à l'octet (`tests/test_front_couleurs.py`). `STYLE` ne porte donc plus aucune
+teinte Sorabel en dur : des marqueurs `__ACCENT_…__` y sont remplacés par
+`feuille_de_style()`.
+
+**Mode local** (`SORABEL_FRONT_LOCAL=1`, `make front`) — démonstration sur poste, sans
+Identity-Aware Proxy. Le sujet est l'identité de développement `local:developpeur`
+(`front.routage.SUJET_LOCAL`), le profil se choisit à l'écran comme en démonstration, et
+toutes les enseignes disponibles sont servies. Chaque appel de tool **passe toujours par un
+serveur MCP** : `front/mcp_client.py` lance un serveur stdio par couple (profil, enseigne),
+avec `SORABEL_PROFIL` et `SORABEL_ENSEIGNE`, qui applique la matrice et journalise comme en
+production. Ce mode est **interdit sur Cloud Run** : `front.routage.mode_local()` lève
+`RuntimeError` si `K_SERVICE` est définie (Cloud Run la positionne toujours) — actif en
+production, il laisserait n'importe quel visiteur choisir son profil sans authentification.
+Pour la même raison, le poste ne doit pas écouter sur le réseau : `make front` lance
+Streamlit avec `--server.address=127.0.0.1`, et `app_client.py` affiche une erreur et
+s'arrête (`st.stop()`) si, en mode local, `server.address` n'est ni `127.0.0.1`, ni
+`localhost`, ni `::1` — ce qui inclut une option non posée, Streamlit écoutant alors sur
+toutes les interfaces.
+
+`front/routage.py` — le seul chemin d'appel de `app_client.py` : `appeler(enseigne, tool,
+arguments, *, assertion, profil)` choisit le transport (HTTP via `front/passerelle.py` avec
+l'URL de l'enseigne, ou stdio en mode local) ; une enseigne non servie, ou un serveur
+local qui ne démarre pas ou meurt (« Serveur MCP local indisponible. », le détail sur la
+sortie du front seulement), renvoie `{"statut": "erreur", ...}`, jamais une exception
+vers l'écran. Les vues de `app_client.py`
+appellent une fonction `appeler(assertion, tool, arguments)` du module, qui délègue à
+`routage.appeler` avec l'enseigne et le profil de session.
+
+`front/passerelle.py` — le pont vers le serveur MCP déployé, emprunté par `front/routage.py`
+hors mode local. Identity-Aware Proxy authentifie la personne avant que la
 requête n'atteigne Streamlit et dépose une assertion signée dans un en-tête ;
 `assertion_iap()` la lit, `sujet_du_jeton()` en extrait le `sub` **sans vérifier la
 signature** — le front n'est pas juge, c'est le serveur MCP qui valide et décide. La
 passerelle recopie l'assertion telle quelle vers le serveur (`Authorization: Bearer …`) :
 Streamlit ne fabrique et ne manipule jamais de secret d'identité. `_executer()` traduit les
-pannes de transport (délai dépassé, connexion refusée) en `{"statut": "erreur", ...}`, jamais
-confondu avec `{"statut": "non_autorise", ...}` réservé à l'absence d'identité.
+pannes de transport (délai dépassé, connexion refusée, statut HTTP d'erreur, erreur MCP) en
+`{"statut": "erreur", ...}`, jamais confondu avec `{"statut": "non_autorise", ...}`
+réservé à l'absence d'identité. Avec le client MCP, une panne de transport arrive enveloppée
+dans un `ExceptionGroup` : `_executer()` la traduit si le groupe en contient une, et laisse
+remonter tout autre groupe (un bogue ne doit pas passer pour une panne réseau). Une URL
+vide passée en paramètre ne retombe pas sur `SORABEL_URL_MCP` : seul `None` le fait.
 
 `front/depot.py` — choisit le dépôt d'identités via `gouvernance.depots.choisir_depot()`
 (mis en cache par process, `SORABEL_DEPOT` déjà résolu une fois) et calcule
@@ -439,9 +510,12 @@ confondu avec `{"statut": "non_autorise", ...}` réservé à l'absence d'identit
 depuis que le périmètre est résolu par requête (§1, §7), `tools/list` renvoie les 8 tools à
 tout appelant HTTP et ne dit donc plus rien de ce qu'un profil peut réellement appeler.
 
-`front/mcp_client.py` — le pont stdio historique, **inchangé**, conservé pour le
-développement local (il n'est plus importé par `app_client.py`, qui ne parle qu'à
-`front/passerelle.py`). Streamlit ré-exécute le script à chaque interaction : une session MCP
+`front/mcp_client.py` — le pont stdio, emprunté par `front/routage.py` en mode local
+(`app_client.py` ne l'importe pas directement). Les sessions sont indexées par
+`(profil, enseigne)` : un serveur fige son enseigne au démarrage, changer d'enseigne à
+l'écran ouvre donc un autre processus. Une session qui lève (au démarrage ou à l'appel) est
+retirée du cache sous verrou et sa boucle arrêtée : « Réessayer » relance un serveur neuf
+au lieu de retomber sur la session morte jusqu'au redémarrage de Streamlit. Streamlit ré-exécute le script à chaque interaction : une session MCP
 ouverte dans le fil du script ne survivrait pas au clic suivant. La session y est donc tenue
 par un **thread dédié avec sa propre boucle asyncio**, ouverte via une `AsyncExitStack`
 conservée en attribut. Deux pièges Windows déjà payés, à ne pas réintroduire dans ce fichier :
@@ -453,7 +527,9 @@ conservée en attribut. Deux pièges Windows déjà payés, à ne pas réintrodu
   plus (`OSError: [WinError 10106]`).
 
 Il n'existe **aucun chemin d'accès au pipeline qui contourne le serveur MCP** : tout ce que
-le front affiche est passé par la matrice, via `front/passerelle.py`. Une page de debug
+le front affiche est passé par la matrice, via `front/routage.py` (HTTP ou stdio), et
+`front/` n'importe rien de `sorabel_rag`, `sorabel_sql`, `sorabel_llm` ni `mcp_server` —
+`tests/test_front_coherence.py` le vérifie par AST sur chaque `front/*.py`. Une page de debug
 appelant les modules en direct a existé (`front/app.py`) et a été retirée — dans un projet
 dont l'argument est la gouvernance, un contournement disponible finit par servir.
 
@@ -474,11 +550,26 @@ python scripts/ingerer.py                 # corpus → data/canonique/
 python scripts/indexer.py                 # canoniques → Chroma + BM25
 
 SORABEL_PROFIL=commercial python -m mcp_server.serveur   # serveur MCP, stdio (développement)
-streamlit run front/app_client.py                        # poste de travail
+streamlit run front/app_client.py                        # poste de travail (derrière IAP)
+SORABEL_FRONT_LOCAL=1 streamlit run front/app_client.py --server.address=127.0.0.1
+                                         # poste local, sans IAP, boucle locale seulement (make front)
 python scripts/mcp_client.py support answer_question '{"question": "..."}'
 
-python -m pytest -q                       # 218 tests
+python -m pytest -q                       # 346 tests
 ```
+
+**Poste local multi-enseigne (`make front`).** La cible construit d'abord, enseigne par
+enseigne, ce qui manque des données de chaque enseigne présente dans `enseignes/`
+(l'équivalent de `make donnees ENSEIGNE=<nom>` pour chacune, qui appelle Azure pour
+l'indexation), puis lance Streamlit sur `127.0.0.1`. Préparer seulement Kiabi :
+`make donnees ENSEIGNE=kiabi`, avant `make front`. Deux pièges :
+
+- le profil choisi à l'écran (`local:developpeur`) vit dans `gouvernance/gouvernance.db`,
+  que `make test` réinitialise (`gouvernance.seed.peupler` supprime le fichier, et
+  `tests/test_front_mcp_client.py` le repeuple) : après une suite de tests, le premier
+  écran redemande le profil ;
+- sans index, un serveur Kiabi répondrait sans corpus : `make front` évite ce cas en
+  construisant les données d'abord, mais un `streamlit run` direct, lui, ne le fait pas.
 
 Changer `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` **impose de réindexer tout le corpus** : des
 vecteurs de deux modèles ne se comparent pas. Changer le modèle de reranking impose de

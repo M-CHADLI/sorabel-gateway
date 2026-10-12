@@ -47,19 +47,24 @@ def sujet_du_jeton(assertion: str | None) -> str | None:
         return None
 
 
-async def _session(assertion: str):
+async def _session(assertion: str, url: str | None = None):
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
 
     entetes = {"Authorization": f"Bearer {assertion}"}
-    async with streamablehttp_client(URL_MCP, headers=entetes) as (lecture, ecriture, _):
+    # `URL_MCP` lu à l'appel : sans `url`, la production Sorabel garde exactement sa cible.
+    # Une autre enseigne a son propre serveur MCP, que `front.routage` désigne par `url`.
+    cible = URL_MCP if url is None else url
+    async with streamablehttp_client(cible, headers=entetes) as (lecture, ecriture, _):
         async with ClientSession(lecture, ecriture) as session:
             await session.initialize()
             yield session
 
 
-async def _appeler_distant(assertion: str, tool: str | None, arguments: dict | None):
-    async for session in _session(assertion):
+async def _appeler_distant(
+    assertion: str, tool: str | None, arguments: dict | None, url: str | None = None
+):
+    async for session in _session(assertion, url):
         if tool is None:
             outils = await session.list_tools()
             return sorted(o.name for o in outils.tools)
@@ -83,31 +88,45 @@ def _executer(coroutine):
     sans jamais recopier l'assertion dans le message renvoyé à l'appelant.
     """
     import httpx
+    from mcp.shared.exceptions import McpError
 
+    pannes_de_transport = (httpx.TransportError, httpx.HTTPStatusError, McpError)
+    erreur_transport = {"statut": "erreur", "message": "Impossible de joindre le serveur MCP."}
     try:
         return asyncio.run(asyncio.wait_for(coroutine, timeout=DELAI))
     except (asyncio.TimeoutError, TimeoutError):
         return {"statut": "erreur", "message": "Le serveur ne répond pas (délai dépassé)."}
-    except httpx.TransportError:
-        # Englobe ConnectError (connexion refusée, DNS en échec) et ConnectTimeout :
-        # ce sont les exceptions que lève httpx, socle HTTP de streamablehttp_client.
-        return {"statut": "erreur", "message": "Impossible de joindre le serveur MCP."}
+    except pannes_de_transport:
+        # TransportError englobe ConnectError (connexion refusée, DNS en échec) et
+        # ConnectTimeout : ce sont les exceptions que lève httpx, socle HTTP de
+        # streamablehttp_client. Un code HTTP d'erreur ou une erreur du protocole MCP
+        # sont des pannes au même titre : jamais une trace à l'écran.
+        return erreur_transport
+    except BaseExceptionGroup as groupe:
+        # Le client MCP exécute ses flux dans un groupe de tâches anyio : une panne de
+        # transport en sort enveloppée dans un ExceptionGroup, que les `except` ci-dessus
+        # ne reconnaissent pas. On ne traduit que si le groupe contient une panne de
+        # transport ; tout autre contenu (bogue, annulation) doit remonter tel quel. Le
+        # message du groupe n'est jamais recopié : il peut citer l'URL ou l'en-tête.
+        if groupe.subgroup(lambda e: isinstance(e, pannes_de_transport)) is None:
+            raise
+        return erreur_transport
 
 
-def lister_tools(assertion: str | None) -> list[str]:
+def lister_tools(assertion: str | None, url: str | None = None) -> list[str]:
     if not assertion:
         return []
-    resultat = _executer(_appeler_distant(assertion, None, None))
+    resultat = _executer(_appeler_distant(assertion, None, None, url=url))
     # En cas de panne réseau, `_executer` renvoie un dict `{"statut": "erreur", ...}` au
     # lieu de la liste attendue : liste vide, même comportement que `assertion=None`,
     # pour ne pas casser le contrat de retour (`list[str]`) de cette fonction.
     return resultat if isinstance(resultat, list) else []
 
 
-def appeler(assertion: str | None, tool: str, arguments: dict) -> dict:
+def appeler(assertion: str | None, tool: str, arguments: dict, url: str | None = None) -> dict:
     if not assertion:
         return {
             "statut": "non_autorise",
             "message": "Session non authentifiée : rechargez la page.",
         }
-    return _executer(_appeler_distant(assertion, tool, arguments))
+    return _executer(_appeler_distant(assertion, tool, arguments, url=url))

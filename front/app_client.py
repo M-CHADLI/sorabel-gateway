@@ -12,12 +12,18 @@ lire au caractère près (références, identifiants, SQL). Le verre dépoli est
 bandeau : l'appliquer derrière un tableau de chiffres coûterait en lisibilité ce qu'il
 rapporte en style.
 
-Tout passe par le serveur MCP (`front.passerelle`, pont HTTP derrière Identity-Aware Proxy) :
-la page n'applique aucune règle d'accès
+Tout passe par le serveur MCP (`front.routage`, qui choisit le serveur de l'enseigne : pont
+HTTP derrière Identity-Aware Proxy en production, serveur stdio en mode local) : la page
+n'applique aucune règle d'accès
 elle-même, elle reflète ce que la matrice autorise pour le profil connecté. Les garanties du
 brief s'y retrouvent — sources citées (E1), SQL exécuté ou rejeté toujours visible (E3),
 tools masqués hors périmètre (E4), refus traduits en message clair et jamais confondus avec
 une panne (E5).
+
+Une page sert plusieurs enseignes quand plusieurs sont servies : textes, couleurs et exemples
+viennent alors de la table `[front]` de `enseignes/<nom>/enseigne.toml`. Sorabel n'en déclare
+pas, et une seule enseigne servie ne montre aucune page de choix : la production Sorabel
+garde exactement son rendu.
 """
 
 import sys
@@ -25,15 +31,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import html
 import re
 
 import streamlit as st
 from google.api_core.exceptions import GoogleAPICallError
 from google.auth.exceptions import DefaultCredentialsError
+from streamlit import config as config_streamlit
 
+from front import couleurs, routage
 from front.depot import depot_identites, tools_accordes
-from front.passerelle import appeler, assertion_iap, sujet_du_jeton
+from front.passerelle import assertion_iap, sujet_du_jeton
 from gouvernance.perimetre import ProfilInconnu
+from sorabel_enseigne import MOTIF_COULEUR
+from sorabel_enseigne import enseigne as config_enseigne
 
 # Pannes de la couche identité (dépôt SQLite ou Firestore, et matrice) qu'on ne laisse
 # jamais remonter en trace brute à l'écran — voir `page_inscription` et la résolution du
@@ -49,7 +60,81 @@ ERREURS_IDENTITE = (
     GoogleAPICallError,
 )
 
-st.set_page_config(page_title="Sorabel — Poste commercial", layout="wide")
+# Textes et couleurs d'une enseigne qui n'en déclare pas : ce sont ceux de Sorabel, à la
+# lettre. Définis ici seulement — `[front]` de `enseigne.toml` ne fait que les surcharger,
+# et `sorabel_enseigne.CLES_FRONT` refuse toute clé absente de cette table.
+DEFAUTS_FRONT = {
+    "titre_page": "Sorabel — Poste commercial",
+    "nom_produit": "Sorabel Data Gateway",
+    "mention": "",
+    # Résumé du corpus affiché dans le rappel : un chiffre propre à chaque enseigne.
+    "resume_corpus": "400 documents indexés",
+    "couleur_accent": "#2563EB",
+    "couleur_fond": "#0D1526",
+    # Références réelles du catalogue, proposées en exemple : un champ vide n'apprend rien
+    # du format attendu, et le premier essai d'un nouvel utilisateur échoue le plus souvent
+    # dessus.
+    "references_exemple": ("REF-8842", "REF-1024", "REF-5719", "REF-3764"),
+    "questions_exemple": (
+        "Quel disjoncteur pour un départ moteur en triphasé ?",
+        "Quelle est la procédure de retour d'un produit défectueux ?",
+        "Que faire quand un disjoncteur déclenche de façon répétée ?",
+    ),
+    "question_sql_exemple": "Combien de commandes en avril ?",
+    "commande_exemple": "CMD-2025-0004",
+    "document_exemple": "fiche_technique:REF-1024:v2.1",
+}
+
+
+def textes_front(nom: str | None) -> dict:
+    """Défauts surchargés par la table `[front]` de l'enseigne ; `None` donne les défauts.
+
+    Une valeur inutilisable lève `ValueError`, comme une clé inconnue au chargement : une
+    erreur de configuration qui passerait en silence ferait une démonstration fausse.
+    """
+    textes = dict(DEFAUTS_FRONT)
+    if nom is not None:
+        textes.update(config_enseigne(nom).front)
+    for cle in ("couleur_accent", "couleur_fond"):
+        if not MOTIF_COULEUR.fullmatch(str(textes[cle])):
+            raise ValueError(f"enseigne {nom!r} : [front] {cle} = {textes[cle]!r}, attendu #RRGGBB")
+    for cle in ("references_exemple", "questions_exemple"):
+        if not textes[cle]:
+            raise ValueError(f"enseigne {nom!r} : [front] {cle} ne peut pas être vide")
+    return textes
+
+
+# L'enseigne se résout avant tout appel `st.*` : le titre de l'onglet en dépend, et
+# `st.set_page_config` doit rester la première commande Streamlit du script. Lire et écrire
+# `st.session_state` n'en est pas une — rien n'est encore envoyé au navigateur.
+MODE_LOCAL = routage.mode_local()
+ENSEIGNES_SERVIES = routage.enseignes_servies()
+if len(ENSEIGNES_SERVIES) == 1:
+    # Une seule enseigne : choisie d'office, sans écran de choix. C'est la production
+    # Sorabel, dont l'image ne contient que `enseignes/sorabel/enseigne.toml`.
+    st.session_state["enseigne"] = ENSEIGNES_SERVIES[0]
+elif st.session_state.get("enseigne") not in ENSEIGNES_SERVIES:
+    # Une enseigne qui n'est plus servie (URL retirée entre deux sessions) ne doit pas rester
+    # sélectionnée : ses appels partiraient vers un serveur que ce front ne connaît plus.
+    st.session_state.pop("enseigne", None)
+ENSEIGNE = st.session_state.get("enseigne")
+FRONT = textes_front(ENSEIGNE)
+
+st.set_page_config(page_title=FRONT["titre_page"], layout="wide")
+
+# Adresses d'écoute qui n'exposent pas le poste au réseau.
+ADRESSES_BOUCLE_LOCALE = ("127.0.0.1", "localhost", "::1")
+
+if MODE_LOCAL and config_streamlit.get_option("server.address") not in ADRESSES_BOUCLE_LOCALE:
+    # Sans IAP, le profil se choisit à l'écran : un poste joignable depuis le réseau donnerait
+    # le profil de son choix à n'importe qui. Streamlit écoute sur toutes les interfaces tant
+    # que `server.address` n'est pas posée — `make front` la pose, ce garde-fou rattrape un
+    # lancement direct (`streamlit run` sans l'option).
+    st.error(
+        "Le mode local refuse d'écouter hors de la boucle locale : relancez avec "
+        "`--server.address=127.0.0.1` (ou `make front`)."
+    )
+    st.stop()
 
 # Le titre suit le profil : afficher « Poste commercial » à un technicien du support
 # donnerait à croire qu'il travaille dans le mauvais outil.
@@ -68,10 +153,6 @@ DESCRIPTIONS_PROFIL = {
     "support": "8 outils, mais marges et prix d'achat hors périmètre",
     "dev": "4 outils documentaires, ni génération ni interrogation de la base",
 }
-
-# Références réelles du catalogue, proposées en exemple : un champ vide n'apprend rien du
-# format attendu, et le premier essai d'un nouvel utilisateur échoue le plus souvent dessus.
-REFERENCES_EXEMPLE = ["REF-8842", "REF-1024", "REF-5719", "REF-3764"]
 
 
 def appliquer_exemple(cle_champ: str) -> None:
@@ -142,9 +223,9 @@ STYLE = """
     --bord:         #E6EAF2;
     --bord-net:     #D4DBE8;
     --fond-doux:    #F4F7FC;
-    --accent:       #2563EB;
-    --accent-fonce: #1D4ED8;
-    --accent-voile: #EFF4FF;
+    --accent:       __ACCENT__;
+    --accent-fonce: __ACCENT_FONCE__;
+    --accent-voile: __ACCENT_VOILE__;
     --succes:       #0F7A4A;
     --succes-fond:  #E3F7EC;
     --alerte:       #C0322B;
@@ -189,7 +270,7 @@ STYLE = """
   .bandeau .marque {
     display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
     background: linear-gradient(140deg, var(--accent) 0%, #4F46E5 100%);
-    color: #fff; box-shadow: 0 3px 8px -2px rgba(37,99,235,.5);
+    color: #fff; box-shadow: 0 3px 8px -2px rgba(__ACCENT_RVB__,.5);
   }
   /* `line-height` explicite : à 1.42rem, les jambages de « p » et « j » et les accents
      capitaux débordent de la boîte par défaut et se font rogner par le flex. */
@@ -199,7 +280,7 @@ STYLE = """
   }
   .bandeau .profil {
     margin-left: auto; font-size: .76rem; font-weight: 600; color: var(--accent-fonce);
-    background: var(--accent-voile); border: 1px solid #DBE6FF;
+    background: var(--accent-voile); border: 1px solid __ACCENT_BORD__;
     border-radius: 999px; padding: .3rem .75rem;
   }
 
@@ -288,10 +369,10 @@ STYLE = """
                 box-shadow var(--transition), transform var(--transition);
   }
   .stButton > button[kind="primary"] {
-    background: linear-gradient(180deg, #2F6BEE 0%, var(--accent-fonce) 100%);
-    border: 1px solid var(--accent-fonce); box-shadow: 0 2px 6px -1px rgba(37,99,235,.45);
+    background: linear-gradient(180deg, __ACCENT_CLAIR__ 0%, var(--accent-fonce) 100%);
+    border: 1px solid var(--accent-fonce); box-shadow: 0 2px 6px -1px rgba(__ACCENT_RVB__,.45);
   }
-  .stButton > button[kind="primary"]:hover { transform: translateY(-1px); box-shadow: 0 5px 12px -2px rgba(37,99,235,.5); }
+  .stButton > button[kind="primary"]:hover { transform: translateY(-1px); box-shadow: 0 5px 12px -2px rgba(__ACCENT_RVB__,.5); }
   .stButton > button[kind="primary"]:active { transform: translateY(0); }
 
   /* Champs : le halo au focus vaut confirmation que la frappe ira bien là. */
@@ -300,7 +381,7 @@ STYLE = """
     background: #fff !important;
   }
   .stTextInput input:focus {
-    border-color: var(--accent) !important; box-shadow: 0 0 0 3px rgba(37,99,235,.16) !important;
+    border-color: var(--accent) !important; box-shadow: 0 0 0 3px rgba(__ACCENT_RVB__,.16) !important;
   }
   [data-testid="stExpander"] details {
     border: 1px solid var(--bord) !important; border-radius: var(--rayon) !important;
@@ -312,7 +393,7 @@ STYLE = """
      d'application. L'inversion suffit à séparer « où je suis » de « ce que je consulte »,
      sans le trait de séparation qu'il fallait sinon. */
   [data-testid="stSidebar"] {
-    background: linear-gradient(185deg, #0D1526 0%, #16223C 55%, #1A2745 100%);
+    background: linear-gradient(185deg, __FOND__ 0%, #16223C 55%, #1A2745 100%);
     border-right: none;
   }
   [data-testid="stSidebar"] * { color: #E9EEF9; }
@@ -456,7 +537,20 @@ def _regles_couleurs() -> str:
     return "<style>\n" + "\n".join(regles) + "\n</style>"
 
 
-st.markdown(STYLE + _regles_couleurs(), unsafe_allow_html=True)
+def feuille_de_style(accent: str, fond: str) -> str:
+    """`STYLE` aux couleurs de l'enseigne.
+
+    Les teintes voisines de l'accent (foncé, voile, ombres, focus) sont dérivées par
+    `front.couleurs`. Avec les défauts, le résultat est la feuille Sorabel d'origine, à
+    l'octet près.
+    """
+    return couleurs.habiller(STYLE, accent, fond)
+
+
+st.markdown(
+    feuille_de_style(FRONT["couleur_accent"], FRONT["couleur_fond"]) + _regles_couleurs(),
+    unsafe_allow_html=True,
+)
 
 
 # --- présentation ----------------------------------------------------------------------
@@ -547,25 +641,28 @@ def vue_produit(assertion: str | None, tools: frozenset[str]) -> None:
         unsafe_allow_html=True,
     )
 
+    references_exemple = FRONT["references_exemple"]
     appliquer_exemple("ref_produit")
     champ, action = st.columns([4, 1])
     with champ:
         saisie = st.text_input(
-            "Référence produit", placeholder="REF-8842", key="ref_produit"
+            "Référence produit", placeholder=references_exemple[0], key="ref_produit"
         )
     with action:
         st.markdown("<div style='height:1.85rem'></div>", unsafe_allow_html=True)
         lancer = st.button("Consulter", key="btn_produit", type="primary", use_container_width=True)
 
     st.caption("Références du catalogue, pour essayer :")
-    for exemple, colonne in zip(REFERENCES_EXEMPLE, st.columns(len(REFERENCES_EXEMPLE) + 3)):
+    for exemple, colonne in zip(references_exemple, st.columns(len(references_exemple) + 3)):
         proposer_exemple("ref_produit", exemple, f"ex_{exemple}", colonne)
 
     reference = saisie.strip().upper()
     if not lancer or not reference:
         return
     if not MOTIF_REFERENCE.fullmatch(reference):
-        st.warning("Format attendu : REF-XXXX (quatre chiffres). Exemple : REF-8842.")
+        st.warning(
+            f"Format attendu : REF-XXXX (quatre chiffres). Exemple : {references_exemple[0]}."
+        )
         return
 
     st.divider()
@@ -637,13 +734,6 @@ def vue_produit(assertion: str | None, tools: frozenset[str]) -> None:
     suivi.empty()
 
 
-QUESTIONS_EXEMPLE = [
-    "Quel disjoncteur pour un départ moteur en triphasé ?",
-    "Quelle est la procédure de retour d'un produit défectueux ?",
-    "Que faire quand un disjoncteur déclenche de façon répétée ?",
-]
-
-
 def vue_question(assertion: str | None, tools: frozenset[str]) -> None:
     st.markdown(
         "<div class='panneau'><div class='intitule'>Interroger la documentation</div>"
@@ -652,14 +742,15 @@ def vue_question(assertion: str | None, tools: frozenset[str]) -> None:
         "</div></div>",
         unsafe_allow_html=True,
     )
+    questions_exemple = FRONT["questions_exemple"]
     appliquer_exemple("question_doc")
     question = st.text_input(
         "Votre question",
-        placeholder="Quel disjoncteur pour un départ moteur en triphasé ?",
+        placeholder=questions_exemple[0],
         key="question_doc",
     )
     st.caption("Exemples couverts par le corpus :")
-    for indice, exemple in enumerate(QUESTIONS_EXEMPLE):
+    for indice, exemple in enumerate(questions_exemple):
         proposer_exemple("question_doc", exemple, f"q_{indice}")
 
     if st.button("Rechercher", key="btn_question", type="primary") and question:
@@ -681,7 +772,7 @@ def vue_donnees(assertion: str | None, tools: frozenset[str]) -> None:
         unsafe_allow_html=True,
     )
     question = st.text_input(
-        "Votre question", placeholder="Combien de commandes en avril ?", key="question_sql"
+        "Votre question", placeholder=FRONT["question_sql_exemple"], key="question_sql"
     )
     if st.button("Interroger", key="btn_donnees", type="primary") and question:
         with st.spinner("Interrogation de la base…"):
@@ -717,8 +808,9 @@ def vue_schema(assertion: str | None, tools: frozenset[str]) -> None:
 
 def vue_commande(assertion: str | None, tools: frozenset[str]) -> None:
     st.subheader("Suivre une commande")
+    commande_exemple = FRONT["commande_exemple"]
     identifiant = (
-        st.text_input("Identifiant de commande", placeholder="CMD-2025-0004", key="id_commande")
+        st.text_input("Identifiant de commande", placeholder=commande_exemple, key="id_commande")
         .strip()
         .upper()
     )
@@ -731,7 +823,7 @@ def vue_commande(assertion: str | None, tools: frozenset[str]) -> None:
         if not lignes:
             afficher_vide(
                 "Aucune commande à cet identifiant",
-                "Vérifiez le format : CMD-AAAA-NNNN, par exemple CMD-2025-0004.",
+                f"Vérifiez le format : CMD-AAAA-NNNN, par exemple {commande_exemple}.",
             )
             return
         donnees = dict(zip(colonnes, lignes[0]))
@@ -763,7 +855,9 @@ def vue_recherche(assertion: str | None, tools: frozenset[str]) -> None:
         "le texte d'origine. Plus rapide qu'une réponse rédigée.</div></div>",
         unsafe_allow_html=True,
     )
-    requete = st.text_input("Termes recherchés", placeholder="REF-8842", key="requete_docs")
+    requete = st.text_input(
+        "Termes recherchés", placeholder=FRONT["references_exemple"][0], key="requete_docs"
+    )
     nombre = st.slider("Nombre d'extraits", 1, 10, 5, key="k_docs")
 
     if st.button("Rechercher", key="btn_recherche", type="primary") and requete:
@@ -804,14 +898,26 @@ def vue_document(assertion: str | None, tools: frozenset[str]) -> None:
         "recherche. Sans version précisée, la version courante est servie.</div></div>",
         unsafe_allow_html=True,
     )
+    document_exemple = FRONT["document_exemple"]
+    # Référence et version reprises de l'identifiant d'exemple : les deux façons d'ouvrir un
+    # document proposent alors le même, et l'utilisateur voit qu'elles se correspondent.
+    parties = document_exemple.split(":")
+    if len(parties) == 3:
+        reference_exemple, version_exemple = parties[1], parties[2].removeprefix("v")
+    else:
+        reference_exemple, version_exemple = FRONT["references_exemple"][0], ""
     par_reference, par_identifiant = st.columns(2)
     with par_reference:
-        reference = st.text_input("Référence produit", placeholder="REF-1024", key="doc_ref")
-        version = st.text_input("Version (facultatif)", placeholder="2.1", key="doc_version")
+        reference = st.text_input(
+            "Référence produit", placeholder=reference_exemple, key="doc_ref"
+        )
+        version = st.text_input(
+            "Version (facultatif)", placeholder=version_exemple, key="doc_version"
+        )
     with par_identifiant:
         doc_id = st.text_input(
             "Ou identifiant du document",
-            placeholder="fiche_technique:REF-1024:v2.1",
+            placeholder=document_exemple,
             key="doc_id",
         )
 
@@ -949,14 +1055,25 @@ def page_inscription(sujet: str) -> None:
     """
     st.markdown(
         "<div class='bandeau'><span class='marque'>" + LOGO + "</span>"
-        "<span class='titre'>Bienvenue sur la Sorabel Data Gateway</span></div>",
+        f"<span class='titre'>Bienvenue sur la {html.escape(FRONT['nom_produit'], quote=False)}"
+        "</span></div>",
         unsafe_allow_html=True,
     )
-    st.info(
-        "**Mode démonstration** — vous choisissez ici votre profil. En exploitation réelle, "
-        "les profils sont attribués par un administrateur ; votre identité, elle, est déjà "
-        "établie par Google et n'est pas modifiable."
-    )
+    afficher_mention()
+    if MODE_LOCAL:
+        # Le texte de démonstration parle d'une identité établie par Google : en local, elle
+        # n'existe pas, et le dire évite de prendre ce poste pour un parcours authentifié.
+        st.info(
+            "**Mode local** — pas d'Identity-Aware Proxy devant cette page : vous travaillez "
+            "sous l'identité de développement de ce poste. Le profil choisi ici est celui que "
+            "le serveur MCP applique ensuite à chaque appel."
+        )
+    else:
+        st.info(
+            "**Mode démonstration** — vous choisissez ici votre profil. En exploitation réelle, "
+            "les profils sont attribués par un administrateur ; votre identité, elle, est déjà "
+            "établie par Google et n'est pas modifiable."
+        )
     st.caption(f"Connecté en tant que {sujet}")
 
     for code, (libelle, _) in PROFILS.items():
@@ -977,6 +1094,52 @@ def page_inscription(sujet: str) -> None:
                     st.rerun()
 
 
+def afficher_mention() -> None:
+    """Bandeau d'avertissement de l'enseigne : une démonstration sur données fictives doit
+    le dire sur chaque écran, pas seulement à l'accueil, puisqu'une capture d'écran circule
+    sans son contexte."""
+    if FRONT["mention"]:
+        st.warning(FRONT["mention"])
+
+
+def page_choix_enseigne(servies: list[str]) -> None:
+    """Affichée seulement quand plusieurs enseignes sont servies.
+
+    Avant l'inscription : le profil est commun à toutes les enseignes (une seule matrice),
+    mais les textes de l'écran d'inscription sont déjà ceux de l'enseigne choisie.
+    """
+    st.markdown(
+        "<div class='bandeau'><span class='marque'>" + LOGO + "</span>"
+        "<span class='titre'>Choisir une enseigne</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Chaque enseigne est servie par son propre serveur MCP : ses documents, sa base et "
+        "son journal ne se mélangent jamais avec ceux d'une autre."
+    )
+    for nom in servies:
+        textes = textes_front(nom)
+        mention = (
+            f"<div style='font-size:.85rem;color:var(--encre-douce);margin-top:.35rem'>"
+            f"{html.escape(textes['mention'], quote=False)}</div>"
+            if textes["mention"]
+            else ""
+        )
+        colonne_texte, colonne_action = st.columns([4, 1])
+        with colonne_texte:
+            st.markdown(
+                f"<div class='carte'><div class='entete'>"
+                f"{html.escape(config_enseigne(nom).libelle, quote=False)}</div>"
+                f"<div class='meta'>{html.escape(textes['nom_produit'], quote=False)}</div>"
+                f"{mention}</div>",
+                unsafe_allow_html=True,
+            )
+        with colonne_action:
+            if st.button("Choisir", key=f"enseigne_{nom}", use_container_width=True):
+                st.session_state["enseigne"] = nom
+                st.rerun()
+
+
 def _selection(cle: str, valeurs: list[str]) -> str:
     """Maintient la sélection valide : un changement de profil peut la faire disparaître."""
     if st.session_state.get(cle) not in valeurs:
@@ -984,15 +1147,32 @@ def _selection(cle: str, valeurs: list[str]) -> str:
     return st.session_state[cle]
 
 
-assertion = assertion_iap()
-sujet = sujet_du_jeton(assertion)
+if MODE_LOCAL:
+    # Pas d'IAP en local, donc pas d'assertion à relayer : `front.routage` passe alors par
+    # un serveur stdio lancé avec le profil choisi, qui applique la matrice comme en HTTP.
+    # `routage.mode_local()` a déjà refusé de démarrer si ce front tourne sur Cloud Run.
+    assertion = None
+    sujet = routage.SUJET_LOCAL
+else:
+    assertion = assertion_iap()
+    sujet = sujet_du_jeton(assertion)
 
 if sujet is None:
     # Hors périmètre du brief (qui vise le parcours authentifié derrière IAP) mais nécessaire
-    # en local : sans proxy devant Streamlit, `assertion_iap()` renvoie None et
+    # hors mode local (`SORABEL_FRONT_LOCAL` absent) : sans proxy devant Streamlit,
+    # `assertion_iap()` renvoie None et
     # `sujet_du_jeton(None)` aussi (contrat de `front.passerelle`, Task 7). Sans cette garde,
     # `page_inscription(None)` afficherait un trompeur « Connecté en tant que None ».
     st.info("Session non authentifiée — cette page s'utilise derrière Identity-Aware Proxy.")
+    st.stop()
+
+if not ENSEIGNES_SERVIES:
+    # Aucun `enseigne.toml` dans l'image : sans enseigne, aucun serveur à interroger.
+    st.error("Aucune enseigne n'est servie par ce poste. Signalez l'incident à l'exploitation.")
+    st.stop()
+
+if ENSEIGNE is None:
+    page_choix_enseigne(ENSEIGNES_SERVIES)
     st.stop()
 
 try:
@@ -1014,8 +1194,20 @@ if profil is None:
     page_inscription(sujet)
     st.stop()
 
+
+def appeler(assertion: str | None, tool: str, arguments: dict) -> dict:
+    """Seul point d'appel des vues : tout tool part vers le serveur MCP de l'enseigne de
+    session, qui applique la matrice et journalise.
+
+    La signature reste celle de `front.passerelle.appeler` : les vues n'ont pas à savoir
+    quelle enseigne ni quel transport les sert. Défini ici, une fois enseigne et profil
+    résolus — aucune vue ne s'exécute avant.
+    """
+    return routage.appeler(ENSEIGNE, tool, arguments, assertion=assertion, profil=profil)
+
+
 with st.sidebar:
-    st.markdown("### Sorabel Data Gateway")
+    st.markdown(f"### {FRONT['nom_produit']}")
 
     themes = navigation_disponible(tools)
     vue_courante = None
@@ -1097,6 +1289,14 @@ with st.sidebar:
             else:
                 st.rerun()
 
+    # Une seule enseigne servie (production Sorabel) : rien à changer, donc rien à montrer.
+    if len(ENSEIGNES_SERVIES) > 1:
+        st.caption(f"Enseigne : {config_enseigne(ENSEIGNE).libelle}")
+        if st.button("Changer d'enseigne", key="btn_enseigne", use_container_width=True):
+            # Le profil reste : la matrice est commune à toutes les enseignes.
+            st.session_state.pop("enseigne", None)
+            st.rerun()
+
 libelle_profil, titre_poste = PROFILS[profil]
 st.markdown(
     f"<div class='bandeau'><span class='marque'>{LOGO}</span>"
@@ -1104,7 +1304,7 @@ st.markdown(
     f"<span class='profil'>{libelle_profil}</span></div>"
     f"<div class='rappel'>"
     f"<div class='item'><span class='legende'>Corpus</span>"
-    f"<span class='valeur'>400 documents indexés</span></div>"
+    f"<span class='valeur'>{html.escape(FRONT['resume_corpus'], quote=False)}</span></div>"
     f"<div class='item'><span class='legende'>Données</span>"
     f"<span class='valeur'>produits · stocks · clients · commandes · ventes</span></div>"
     f"<div class='item'><span class='legende'>Fonctions accordées</span>"
@@ -1112,6 +1312,7 @@ st.markdown(
     f"</div>",
     unsafe_allow_html=True,
 )
+afficher_mention()
 
 if vue_courante is None:
     afficher_vide(
