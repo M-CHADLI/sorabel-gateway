@@ -1,0 +1,39 @@
+{"id": "KIA-01", "type": "reference_exacte", "question": "REF-1024", "attendu_reference": "REF-1024", "attendu_doc_ids": ["fiche_technique:REF-1024:v2.1"]}
+{"id": "KIA-02", "type": "reference_exacte", "question": "fiche technique REF-1024", "attendu_reference": "REF-1024", "attendu_doc_ids": ["fiche_technique:REF-1024:v2.1"]}
+{"id": "KIA-03", "type": "reference_exacte", "question": "REF-6677", "attendu_reference": "REF-6677", "attendu_doc_ids": ["fiche_technique:REF-6677:v1.0"]}
+{"id": "KIA-04", "type": "reference_exacte", "question": "REF-5812", "attendu_reference": "REF-5812", "attendu_doc_ids": ["fiche_technique:REF-5812:v1.0"]}
+{"id": "KIA-05", "type": "reference_exacte", "question": "REF-9396", "attendu_reference": "REF-9396", "attendu_doc_ids": ["fiche_technique:REF-9396:v1.0"]}
+{"id": "KIA-06", "type": "reference_exacte", "question": "REF-2781", "attendu_reference": "REF-2781", "attendu_doc_ids": ["fiche_technique:REF-2781:v1.0"]}
+{"id": "KIA-07", "type": "reference_exacte", "question": "REF-1515", "attendu_reference": "REF-1515", "attendu_doc_ids": ["fiche_technique:REF-1515:v1.0"]}
+{"id": "KIA-08", "type": "reference_exacte", "question": "REF-8594", "attendu_reference": "REF-8594", "attendu_doc_ids": ["fiche_technique:REF-8594:v2.1"]}
+{"id": "KIA-09", "type": "reference_exacte", "question": "REF-4778", "attendu_reference": "REF-4778", "attendu_doc_ids": ["fiche_technique:REF-4778:v1.0"]}
+{"id": "KIA-10", "type": "reference_exacte", "question": "guide d'entretien REF-3213", "attendu_reference": "REF-3213", "attendu_doc_ids": ["notice:REF-3213:v2.0"]}
+{"id": "KIA-11", "type": "reference_exacte", "question": "guide d'entretien REF-9586", "attendu_reference": "REF-9586", "attendu_doc_ids": ["notice:REF-9586:v2.0"]}
+{"id": "KIA-12", "type": "reference_exacte", "question": "composition REF-7633", "attendu_reference": "REF-7633", "attendu_doc_ids": ["fiche_technique:REF-7633:v1.0"]}
+{"id": "KIA-13", "type": "couverte", "question": "à quelle température laver un jean slim brut ?", "attendu_reference": "REF-1024", "attendu_doc_ids": ["notice:REF-1024:v2.0"]}
+{"id": "KIA-14", "type": "couverte", "question": "peut-on passer un pull col camionneur au sèche-linge ?", "attendu_reference": "REF-5337", "attendu_doc_ids": ["notice:REF-5337:v1.0"]}
+{"id": "KIA-15", "type": "couverte", "question": "comment faire sécher une doudoune légère sans manches ?", "attendu_reference": "REF-3007", "attendu_doc_ids": ["notice:REF-3007:v1.0"]}
+{"id": "KIA-16", "type": "couverte", "question": "comment ranger un gilet long en maille pour éviter qu'il se déforme ?", "attendu_reference": "REF-5806", "attendu_doc_ids": ["notice:REF-5806:v1.0"]}
+{"id": "KIA-17", "type": "couverte", "question": "quelle est la composition de la veste softshell ?", "attendu_reference": "REF-7980", "attendu_doc_ids": ["fiche_technique:REF-7980:v1.0"]}
+{"id": "KIA-18", "type": "couverte", "question": "dans quel pays est fabriquée la salopette en jean pour bébé ?", "attendu_reference": "REF-5886", "attendu_doc_ids": ["fiche_technique:REF-5886:v1.0"]}
+{"id": "KIA-19", "type": "couverte", "question": "le t-shirt imprimé dinosaure est-il en coton bio ?", "attendu_reference": "REF-1900", "attendu_doc_ids": ["fiche_technique:REF-1900:v2.1"]}
+{"id": "KIA-20", "type": "couverte", "question": "un client veut échanger un article contre une autre taille : quelle est la procédure ?", "attendu_type": "procedure_sav", "attendu_doc_ids": ["procedure_sav:proc-echange-taille-01:v2.0", "procedure_sav:proc-echange-taille-02:v1.0"]}
+{"id": "KIA-21", "type": "couverte", "question": "que faire quand un colis commandé sur le site arrive endommagé ?", "attendu_type": "procedure_sav", "attendu_doc_ids": ["procedure_sav:proc-colis-endommage-01:v2.0", "procedure_sav:proc-colis-endommage-02:v1.0"]}
+{"id": "KIA-22", "type": "couverte", "question": "un vêtement a rétréci au lavage, comment traiter la réclamation du client ?", "attendu_type": "procedure_sav", "attendu_doc_ids": ["procedure_sav:proc-article-decolore-01:v2.0", "procedure_sav:proc-article-decolore-02:v1.0"]}
+{"id": "KIA-23", "type": "couverte", "question": "un magasin a reçu des articles qui ne correspondent pas à son réassort, que faire ?", "attendu_type": "procedure_sav", "attendu_doc_ids": ["procedure_sav:proc-erreur-reassort-01:v2.0", "procedure_sav:proc-erreur-reassort-02:v1.0"]}
+{"id": "KIA-24", "type": "couverte", "question": "comment rembourser un client sur carte cadeau ?", "attendu_type": "procedure_sav", "attendu_doc_ids": ["procedure_sav:proc-remboursement-carte-cadeau-01:v2.0", "procedure_sav:proc-remboursement-carte-cadeau-02:v1.0"]}
+{"id": "KIA-25", "type": "couverte", "question": "un article défectueux peut-il être rapporté en magasin pour remboursement ?", "attendu_type": "procedure_sav", "attendu_doc_ids": ["procedure_sav:proc-retour-article-defectueux-01:v2.0", "procedure_sav:proc-retour-article-defectueux-02:v1.0"]}
+{"id": "KIA-26", "type": "couverte", "question": "quel défaut qualité a été signalé sur le top en dentelle ?", "attendu_reference": "REF-2422", "attendu_doc_ids": ["note_interne:note-2025-01-26-alerte-qualite-11:v1.0"]}
+{"id": "KIA-27", "type": "couverte", "question": "depuis quel entrepôt est expédié le réassort du jogging molleton ?", "attendu_reference": "REF-1288", "attendu_doc_ids": ["note_interne:note-2026-11-02-logistique-32:v1.0"]}
+{"id": "KIA-28", "type": "couverte", "question": "la chemise oxford taille-t-elle petit selon les magasins ?", "attendu_reference": "REF-7143", "attendu_doc_ids": ["note_interne:note-2025-04-06-retour-terrain-39:v1.0"]}
+{"id": "KIA-29", "type": "couverte", "question": "quelle démarque est prévue sur les chaussons fourrés pour les soldes ?", "attendu_reference": "REF-9695", "attendu_doc_ids": ["note_interne:note-2025-10-09-politique-tarifaire-08:v1.0"]}
+{"id": "KIA-30", "type": "hors_corpus", "question": "quels sont les horaires d'ouverture du magasin Kiabi de Lille ?"}
+{"id": "KIA-31", "type": "hors_corpus", "question": "quel est le prix d'un costume trois pièces en laine ?"}
+{"id": "KIA-32", "type": "hors_corpus", "question": "vendez-vous des robes de mariée ?"}
+{"id": "KIA-33", "type": "hors_corpus", "question": "quelle est la politique de télétravail chez Kiabi ?"}
+{"id": "KIA-34", "type": "hors_corpus", "question": "quelles sont les grilles de salaires des conseillers de vente ?"}
+{"id": "KIA-35", "type": "hors_corpus", "question": "comment postuler à un poste de vendeur en magasin ?"}
+{"id": "KIA-36", "type": "hors_corpus", "question": "quel est le chiffre d'affaires de Kiabi en 2025 ?"}
+{"id": "KIA-37", "type": "hors_corpus", "question": "à partir de quel montant la livraison est-elle gratuite sur le site ?"}
+{"id": "KIA-38", "type": "hors_corpus", "question": "quand commencent les soldes d'hiver 2026 ?"}
+{"id": "KIA-39", "type": "hors_corpus", "question": "quelle est la capitale de l'Australie ?"}

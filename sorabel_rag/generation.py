@@ -6,7 +6,7 @@ chunks réellement passés au prompt (titre, référence, date) — contrainte n
 
 from __future__ import annotations
 
-from sorabel_enseigne import enseigne_active
+from sorabel_enseigne import Enseigne, enseigne_active
 from sorabel_llm.client import completer
 
 from .chunking import texte_complet
@@ -18,6 +18,16 @@ PROMPT_SYSTEME = (
     "Si les extraits ne permettent pas de répondre complètement, dis-le explicitement. "
     "Ne cite jamais tes sources toi-même : elles sont ajoutées automatiquement par le système."
 )
+
+
+def seuil_refus_de(enseigne: Enseigne) -> float:
+    """Un seuil se calibre sur un corpus : une enseigne qui a mesuré le sien le déclare
+    (`rag.seuil_refus`), les autres gardent celui du moteur, mesuré sur Sorabel."""
+    return SEUIL_REFUS if enseigne.seuil_refus is None else enseigne.seuil_refus
+
+
+# Figé à l'import, comme PROMPT_SYSTEME : une enseigne par processus.
+SEUIL_REFUS_ENSEIGNE = seuil_refus_de(enseigne_active())
 
 
 def _construire_prompt(question: str, resultats: list[Resultat]) -> list[dict]:
@@ -55,7 +65,7 @@ def repondre(question: str, k: int = 5, perimetre=None) -> dict:
     resultats = rechercher(
         question, k=k, config="hybride_rerank", collections_autorisees=collections
     )
-    if not resultats or resultats[0].score < SEUIL_REFUS:
+    if not resultats or resultats[0].score < SEUIL_REFUS_ENSEIGNE:
         return {
             "statut": "hors_corpus",
             "message": "Je ne trouve pas de réponse à cette question dans le corpus documentaire.",

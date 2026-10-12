@@ -88,6 +88,9 @@ class Enseigne:
     nom_base: str
     commentaires_sql: Mapping[str, str]
     front: Mapping[str, object]
+    # `None` : le seuil du moteur (sorabel_rag.recherche.SEUIL_REFUS, calibré sur Sorabel),
+    # que ce module ne peut pas nommer sans importer sorabel_rag.
+    seuil_refus: float | None = None
 
 
 def _valider_front(table: dict, chemin_toml: Path) -> None:
@@ -188,6 +191,19 @@ def _verifier_dossiers_regenerables(chemin_toml: Path, chemins: Chemins) -> None
                     f"chemins.{preserve} — make reset-donnees l'effacerait"
                 )
 
+def _lire_seuil_refus(chemin_toml: Path, valeur: object) -> float | None:
+    """Un seuil hors de ]0, 1] ne lève rien à l'usage : il désactive E1 en silence. À 0,
+    aucune note n'est sous le seuil, donc rien n'est jamais refusé ; au-delà de 1 (note
+    maximale du barème du reranker), tout l'est."""
+    if valeur is None:
+        return None
+    # `bool` est un `int` en Python : `seuil_refus = true` passerait pour 1.
+    if isinstance(valeur, bool) or not isinstance(valeur, (int, float)) or not 0 < valeur <= 1:
+        raise ValueError(
+            f"{chemin_toml} : rag.seuil_refus doit être un nombre dans ]0, 1], pas {valeur!r}"
+        )
+    return float(valeur)
+
 
 def charger_enseigne(chemin_toml: Path) -> Enseigne:
     """Les chemins relatifs du `.toml` sont résolus depuis la racine du dépôt, pas depuis le
@@ -208,6 +224,7 @@ def charger_enseigne(chemin_toml: Path) -> Enseigne:
             nom_base=brut["sql"]["nom_base"],
             commentaires_sql=MappingProxyType(dict(brut["sql"].get("commentaires", {}))),
             front=_lire_front(brut, chemin_toml),
+            seuil_refus=_lire_seuil_refus(chemin_toml, brut["rag"].get("seuil_refus")),
         )
     except KeyError as cle:
         raise ValueError(f"{chemin_toml} : clé manquante {cle}") from None

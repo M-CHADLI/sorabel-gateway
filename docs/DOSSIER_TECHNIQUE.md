@@ -204,6 +204,10 @@ appel, et tout changement de `SORABEL_ENSEIGNE` en cours de processus lève `Val
 (un `.env` chargé après les imports ne doit pas produire un processus mi-une, mi-l'autre
 enseigne).
 
+`Enseigne.seuil_refus` est optionnel : `None` (Sorabel) garde le `SEUIL_REFUS` du moteur.
+`generation.SEUIL_REFUS_ENSEIGNE` porte le seuil de l'enseigne active, figé à l'import.
+Kiabi déclare 0.75, mesuré dans `docs/calibrage-kiabi.md`.
+
 ### Forme de retour des tools
 
 Tout tool renvoie un `dict` avec une clé `statut`. Un refus **est un retour normal**, jamais
@@ -279,7 +283,7 @@ chunking.py — découpe par section structurelle, fusion des sections courtes
               3 tentatives, puis RerankIndisponible — une panne technique
               ne doit JAMAIS se présenter comme un « hors_corpus »
                         ▼
-              meilleur score < SEUIL_REFUS (0.3) ?
+              meilleur score < seuil de l'enseigne (SEUIL_REFUS = 0.3 par défaut) ?
                  oui → {"statut": "hors_corpus"}   ← aucun appel de génération
                  non → génération + citations
 ```
@@ -573,7 +577,7 @@ l'indexation), puis lance Streamlit sur `127.0.0.1`. Préparer seulement Kiabi :
 
 Changer `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` **impose de réindexer tout le corpus** : des
 vecteurs de deux modèles ne se comparent pas. Changer le modèle de reranking impose de
-recalibrer `SEUIL_REFUS`.
+recalibrer `SEUIL_REFUS` et les `seuil_refus` déclarés par les enseignes.
 
 En transport HTTP (production), le serveur exige en plus l'authentification et le dépôt
 d'identités — `SORABEL_TRANSPORT=http`, `SORABEL_OIDC_ISSUER`/`_AUDIENCE`/`_JWKS`,
@@ -587,7 +591,7 @@ les commandes de vérification.
 
 | | Exigence | Où | Vérifié par |
 |---|---|---|---|
-| **E1** | Refus hors corpus déterministe, citations non hallucinées | `recherche.SEUIL_REFUS`, `generation._construire_citations` | `test_generation.py` |
+| **E1** | Refus hors corpus déterministe, citations non hallucinées | `recherche.SEUIL_REFUS`, `generation.SEUIL_REFUS_ENSEIGNE`, `generation._construire_citations` | `test_generation.py`, `test_enseigne_seuil_refus.py` |
 | **E2** | RAG hybride dense + BM25 + rerank | `index.py`, `recherche.rechercher` | `test_recherche_collections.py` |
 | **E3** | SQL lecture seule, barrières multiples, SQL toujours visible | `validation.py`, `execution.py` | `test_sql_validation.py`, `test_sql_execution.py` |
 | **E4** | Matrice d'accès appliquée et journalisée, refus compris | `perimetre.py`, `tools.enregistrer_tools` (décorateur `_gouverne`), `authentification.py`, `journal.py` | `test_gouvernance_*.py`, `test_mcp_tools.py`, `test_mcp_authentification.py` |

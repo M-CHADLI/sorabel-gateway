@@ -18,6 +18,10 @@ journal = "logs/kiabi/appels.jsonl"
 [rag]
 collection = "kiabi_docs"
 presentation = "l'assistant documentaire de Kiabi, enseigne de prêt-à-porter familial à petits prix (démonstration, données fictives)"
+# Refus hors corpus (E1), mesuré sur ce corpus (docs/calibrage-kiabi.md). Le 0.3 du moteur
+# laisse générer sur la note 0.5 (« sujet proche »), que le reranker donne ici à des
+# questions hors corpus et jamais au meilleur document d'une question couverte.
+seuil_refus = 0.75
 
 # Libellés de type en tête de chaque chunk, que le LLM lit et répète ; un type absent garde
 # celui de Sorabel. « Procédure SAV » reste : les titres des procédures Kiabi commencent déjà
