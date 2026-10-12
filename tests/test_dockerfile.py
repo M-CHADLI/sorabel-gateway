@@ -31,6 +31,9 @@ PAQUETS = {
 # Identifiant du secret BuildKit que l'étape `build` de cloudbuild.yaml fournit
 # (`--secret id=...`) : un RUN qui monterait un autre identifiant n'aurait pas la clé.
 SECRET_EMBEDDINGS = "azure_embedding_key"
+# Variable que lit sorabel_rag/index.py : monter le secret ne la renseigne pas, c'est au RUN de
+# lire /run/secrets/<id> et de l'exporter sous ce nom.
+VARIABLE_CLE = "AZURE_EMBEDDING_API_KEY"
 
 
 def _imports_du_projet(fichier: Path) -> set[str]:
@@ -131,6 +134,17 @@ class Commande:
     # variable de la commande, sinon celle de l'étape (ENV), sinon l'enseigne par défaut.
     enseigne: str
     secret_monte: bool
+    # La clé est dans l'environnement de CETTE commande, lue depuis le secret monté : une clé
+    # lue par la commande voisine du même RUN ne profite pas à celle-ci.
+    cle_lue: bool
+
+
+@dataclass(frozen=True)
+class RunAvecSecret:
+    """Un RUN qui monte le secret des embeddings. `cle_lue` : au moins une commande de ce RUN
+    reçoit la clé, lue depuis le secret, dans VARIABLE_CLE."""
+
+    cle_lue: bool
 
 
 @dataclass
@@ -138,7 +152,7 @@ class Etape:
     nom: str | None
     workdir: str = "/"
     env: dict[str, str] = field(default_factory=dict)
-    evenements: list[Copie | Commande] = field(default_factory=list)
+    evenements: list[Copie | Commande | RunAvecSecret] = field(default_factory=list)
 
     @property
     def copies(self) -> list[Copie]:
@@ -147,6 +161,10 @@ class Etape:
     @property
     def commandes(self) -> list[Commande]:
         return [e for e in self.evenements if isinstance(e, Commande)]
+
+    @property
+    def runs_avec_secret(self) -> list[RunAvecSecret]:
+        return [e for e in self.evenements if isinstance(e, RunAvecSecret)]
 
 
 def _texte_dockerfile() -> str:
@@ -204,27 +222,49 @@ def _lire_copie(etape: Etape, etapes: list[Etape], arguments: str) -> None:
         etape.evenements.append(Copie(depuis, relative, _depuis_workdir(cible, etape.workdir)))
 
 
+def _lit_la_cle(environnement: dict[str, str]) -> bool:
+    """VARIABLE_CLE vient-elle du secret monté (`$(cat /run/secrets/<id>)` ou `$(< …)`) ?
+    Une valeur littérale, ou lue ailleurs, ne prouve pas que la clé du build arrive."""
+    valeur = environnement.get(VARIABLE_CLE, "")
+    return re.search(rf"(?:cat\s+|<\s*)/run/secrets/{SECRET_EMBEDDINGS}\b", valeur) is not None
+
+
 def _lire_run(etape: Etape, arguments: str) -> None:
     options, script_shell = _options(arguments)
     secret = any(
         o.startswith("--mount=") and "type=secret" in o and f"id={SECRET_EMBEDDINGS}" in o
         for o in options
     )
+    # Affectations qui valent pour la suite du RUN : `export X=…` ou `X=… ;` sans commande.
+    # Celles préfixant une commande (`X=… cmd`) ne valent que pour elle.
+    persistantes: dict[str, str] = {}
+    cle_lue_du_run = False
     for commande in re.split(r"&&|\|\||;", script_shell):
         jetons = shlex.split(commande)
+        if jetons and jetons[0] == "export":
+            jetons.pop(0)
         assignations = {}
         while jetons and re.match(r"[A-Za-z_]\w*=", jetons[0]):
             cle, _, valeur = jetons.pop(0).partition("=")
             assignations[cle] = valeur
+        if not jetons:
+            persistantes.update(assignations)
+            cle_lue_du_run = cle_lue_du_run or _lit_la_cle(persistantes)
+            continue
+        environnement = persistantes | assignations
+        cle_lue = _lit_la_cle(environnement)
+        cle_lue_du_run = cle_lue_du_run or cle_lue
         script = next((j for j in jetons if j.endswith(".py")), None)
         if script is None:
             continue
         nom = (
-            assignations.get("SORABEL_ENSEIGNE")
+            environnement.get("SORABEL_ENSEIGNE")
             or etape.env.get("SORABEL_ENSEIGNE")
             or ENSEIGNE_PAR_DEFAUT
         )
-        etape.evenements.append(Commande(posixpath.normpath(script), nom, secret))
+        etape.evenements.append(Commande(posixpath.normpath(script), nom, secret, cle_lue))
+    if secret:
+        etape.evenements.append(RunAvecSecret(cle_lue_du_run))
 
 
 def _etapes_detaillees(texte: str) -> list[Etape]:
@@ -343,6 +383,12 @@ def _fautes_de_l_etape_index(etapes: list[Etape]) -> list[str]:
             fautes.append(f"{nom} : l'indexation précède l'ingestion qui produit ses canoniques")
         if not all(etape.evenements[i].secret_monte for i in indexations):
             fautes.append(f"{nom} : indexation sans le secret BuildKit {SECRET_EMBEDDINGS}")
+        # Monté ne veut pas dire lu : l'indexation qui n'a pas la clé dans son environnement
+        # échoue (ou, pire, tombe sur une valeur résiduelle) au premier appel d'embeddings.
+        if not all(etape.evenements[i].cle_lue for i in indexations):
+            fautes.append(
+                f"{nom} : indexation sans {VARIABLE_CLE} lue depuis le secret {SECRET_EMBEDDINGS}"
+            )
         # La configuration et le corpus doivent être là AVANT l'ingestion qui les lit.
         for prealable in (f"enseignes/{nom}/enseigne.toml", _depuis_racine(chemins.corpus)):
             if not any(
@@ -351,6 +397,18 @@ def _fautes_de_l_etape_index(etapes: list[Etape]) -> list[str]:
             ):
                 fautes.append(f"{nom} : {prealable} pas copié avant l'ingestion")
     return fautes
+
+
+def _runs_qui_ne_lisent_pas_la_cle(etapes: list[Etape]) -> list[str]:
+    """Tout RUN qui monte le secret doit en lire la clé et l'exporter dans VARIABLE_CLE : un
+    montage laissé seul est un RUN qui a l'air d'avoir la clé et ne l'a pas."""
+    return [
+        f"étape {etape.nom or 'finale'} : un RUN monte le secret {SECRET_EMBEDDINGS} sans en "
+        f"lire la clé dans {VARIABLE_CLE}"
+        for etape in etapes
+        for run in etape.runs_avec_secret
+        if not run.cle_lue
+    ]
 
 
 def test_etape_servie_copie_config_base_canoniques_et_index_de_chaque_enseigne():
@@ -368,6 +426,11 @@ def test_etape_index_construit_l_index_de_chaque_enseigne():
     assert not fautes, "\n".join(fautes)
 
 
+def test_tout_run_qui_monte_le_secret_en_lit_la_cle():
+    fautes = _runs_qui_ne_lisent_pas_la_cle(_etapes_detaillees(_texte_dockerfile()))
+    assert not fautes, "\n".join(fautes)
+
+
 _SERVIE = "EXPOSE 8080"
 _RUN_KIABI = "RUN --mount=type=secret,id=azure_embedding_key \\\n    SORABEL_ENSEIGNE=kiabi"
 _COPIE_CORPUS_KIABI = "COPY enseignes/kiabi/data/corpus/ enseignes/kiabi/data/corpus/\n"
@@ -378,6 +441,7 @@ _COPIE_CANONIQUES_KIABI = (
     "COPY --from=index /app/enseignes/kiabi/data/canonique/ enseignes/kiabi/data/canonique/\n"
 )
 _INDEXATION_KIABI = 'SORABEL_ENSEIGNE=kiabi AZURE_EMBEDDING_API_KEY="$(cat'
+_LECTURE_CLE_KIABI = _INDEXATION_KIABI + ' /run/secrets/azure_embedding_key)"'
 
 
 @pytest.mark.parametrize(
@@ -413,6 +477,22 @@ _INDEXATION_KIABI = 'SORABEL_ENSEIGNE=kiabi AZURE_EMBEDDING_API_KEY="$(cat'
             _fautes_de_l_etape_index, _RUN_KIABI,
             _RUN_KIABI.replace("--mount=type=secret,id=azure_embedding_key ", ""),
             "kiabi : indexation sans le secret", id="secret-non-monte",
+        ),
+        pytest.param(
+            _runs_qui_ne_lisent_pas_la_cle, _LECTURE_CLE_KIABI, "SORABEL_ENSEIGNE=kiabi",
+            "monte le secret azure_embedding_key sans en lire la clé",
+            id="secret-monte-sans-etre-lu",
+        ),
+        pytest.param(
+            _runs_qui_ne_lisent_pas_la_cle, _INDEXATION_KIABI,
+            'SORABEL_ENSEIGNE=kiabi AZURE_EMBEDDING_KEY="$(cat',
+            "monte le secret azure_embedding_key sans en lire la clé",
+            id="cle-exportee-sous-un-mauvais-nom",
+        ),
+        pytest.param(
+            _fautes_de_l_etape_index, _LECTURE_CLE_KIABI, "SORABEL_ENSEIGNE=kiabi",
+            "kiabi : indexation sans AZURE_EMBEDDING_API_KEY lue depuis le secret",
+            id="indexation-sans-la-cle",
         ),
         pytest.param(
             _fautes_de_l_etape_index, _COPIE_CORPUS_KIABI, "",
