@@ -70,6 +70,7 @@ def _libelles_types(chemin_toml: Path, surcharges: Mapping) -> Mapping[str, str]
             f"{chemin_toml} : rag.libelles_types, type de document inconnu : "
             f"{', '.join(inconnus)} — types connus : {', '.join(LIBELLES_TYPES_PAR_DEFAUT)}"
         )
+    nettoyes = {}
     for type_document, libelle in surcharges.items():
         if not isinstance(libelle, str) or not libelle.strip():
             # Le libellé ouvre l'en-tête de chaque chunk : vide, il effacerait le type de
@@ -77,7 +78,17 @@ def _libelles_types(chemin_toml: Path, surcharges: Mapping) -> Mapping[str, str]
             raise ValueError(
                 f"{chemin_toml} : rag.libelles_types.{type_document} doit être un texte non vide"
             )
-    return MappingProxyType({**LIBELLES_TYPES_PAR_DEFAUT, **surcharges})
+        if any(interdit in libelle for interdit in ("\n", "\r", "]")):
+            # L'en-tête est `[<libellé> <réf> v<version> — <titre>]` sur sa propre ligne, que
+            # le prompt et le découpage relisent : un saut de ligne le casserait en deux, un
+            # `]` le refermerait avant la référence.
+            raise ValueError(
+                f"{chemin_toml} : rag.libelles_types.{type_document} ne peut contenir ni saut "
+                "de ligne ni « ] » : il s'insère dans l'en-tête « [libellé REF vX — titre] »"
+            )
+        # Sans les espaces de bordure : ils se retrouveraient doublés dans l'en-tête.
+        nettoyes[type_document] = libelle.strip()
+    return MappingProxyType({**LIBELLES_TYPES_PAR_DEFAUT, **nettoyes})
 
 
 def _verifier_dossiers_regenerables(chemin_toml: Path, chemins: Chemins) -> None:

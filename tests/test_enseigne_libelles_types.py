@@ -109,6 +109,29 @@ def test_un_libelle_vide_ou_non_textuel_est_refuse(tmp_path, ecrire_enseigne, va
         charger_enseigne(chemin)
 
 
+@pytest.mark.parametrize("valeur", [
+    '"Guide\\nd\'essai"',   # saut de ligne : l'en-tête tiendrait sur deux lignes
+    '"Guide\\rd\'essai"',
+    '"Guide] d\'essai"',    # crochet : l'en-tête serait refermé avant la référence
+    '"[Guide]"',
+])
+def test_un_libelle_qui_casse_l_en_tete_est_refuse(tmp_path, ecrire_enseigne, valeur):
+    """L'en-tête est `[libellé REF vX — titre]` : un libellé n'y met ni saut de ligne ni `]`."""
+    chemin = _avec_libelles(
+        ecrire_enseigne(tmp_path, "essai", "enseignes/essai/data"), f"notice = {valeur}"
+    )
+    with pytest.raises(ValueError, match=r"libelles_types\.notice.*ni saut de ligne ni"):
+        charger_enseigne(chemin)
+
+
+def test_les_espaces_de_bordure_d_un_libelle_sont_retires(tmp_path, ecrire_enseigne):
+    """Gardés, ils produiraient `[ Guide REF-0001 …]` dans l'en-tête, donc dans l'embedding."""
+    chemin = _avec_libelles(
+        ecrire_enseigne(tmp_path, "essai", "enseignes/essai/data"), 'notice = "  Guide d\'essai \\t"'
+    )
+    assert charger_enseigne(chemin).libelles_types["notice"] == "Guide d'essai"
+
+
 def test_kiabi_nomme_ses_fiches_et_ses_guides():
     libelles = enseigne("kiabi").libelles_types
     assert libelles["fiche_technique"] == "Fiche produit"
