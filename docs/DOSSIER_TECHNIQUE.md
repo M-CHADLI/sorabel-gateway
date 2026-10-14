@@ -112,6 +112,12 @@ sorabel_enseigne/    une enseigne par processus, sans dépendance vers le reste 
 enseignes/
   sorabel/enseigne.toml  chemins historiques (data/, gouvernance/, logs/), prompts,
                      pied de page PDF, vocabulaire du schéma SQL
+  kiabi/enseigne.toml    enseigne de démonstration (données FICTIVES) : chemins sous
+                     enseignes/kiabi/data/, journal logs/kiabi/appels.jsonl, seuil de refus
+                     0.75, libellés de types, table [front]
+  kiabi/data/        corpus (175 documents) et kiabi.db commités, générés par
+                     scripts/generer_kiabi.py (`make generer-kiabi`, déterministe) ;
+                     canonique/ et chroma/ régénérables (`make donnees ENSEIGNE=kiabi`)
 
 sorabel_llm/
   client.py          client unique Azure AI Foundry (API v1), completer()
@@ -159,7 +165,11 @@ scripts/
 
 tests/               50 fichiers, 453 tests
 data/                corpus, sorabel.db, canonique/, chroma/  (hors git)
-logs/appels.jsonl    journal d'appels en stdio (hors git) ; en HTTP, voir SORABEL_JOURNAL
+logs/appels.jsonl    journal d'appels en stdio (hors git) ; en HTTP, voir SORABEL_JOURNAL ;
+                     un journal par enseigne (logs/kiabi/appels.jsonl pour Kiabi)
+eval/questions_rag_kiabi.jsonl  39 questions Kiabi, `attendu_doc_ids` (propre à Kiabi) ;
+                     mesure du seuil : docs/calibrage-kiabi.md ; `make test` refuse
+                     ENSEIGNE != sorabel (la suite porte sur les données Sorabel)
 ```
 
 ---
@@ -451,7 +461,10 @@ L'enseigne de la session vit dans `st.session_state["enseigne"]`.
   commune à toutes les enseignes.
 
 En HTTP, une enseigne est servie si elle est Sorabel (URL historique `SORABEL_URL_MCP`) ou si
-`SORABEL_URL_MCP_<ENSEIGNE>` est définie (`SORABEL_URL_MCP_KIABI`…). Jamais de repli sur
+`SORABEL_URL_MCP_<ENSEIGNE>` est définie (`SORABEL_URL_MCP_KIABI`…) **et** que son
+`enseigne.toml` est présent dans l'image du front : la liste vient des fichiers disponibles,
+donc l'image de production, qui n'embarque que `enseignes/sorabel/enseigne.toml`, ne peut pas
+afficher Kiabi même si la variable est posée (voir la branche `kiabi-deploiement`). Jamais de repli sur
 l'URL Sorabel pour une autre enseigne : une question Kiabi partirait vers les données
 Sorabel, sous l'apparence d'une réponse normale.
 

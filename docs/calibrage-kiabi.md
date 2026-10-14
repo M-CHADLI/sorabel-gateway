@@ -45,7 +45,8 @@ refusée sans génération. Ce cas n'est pas apparu, y compris sur les questions
   (`LIBELLES_TYPE`, `sorabel_rag/chunking.py`, vocabulaire Sorabel). Même question, mêmes
   candidats, seul l'en-tête passé au reranker remplacé par « Guide d'entretien » : notice
   notée 1.0 à 3 essais sur 3, contre 1 sur 5 avec l'en-tête actuel. La correction (libellé
-  par enseigne, puis réindexation de Kiabi) sort du périmètre de ce calibrage.
+  par enseigne, puis réindexation de Kiabi) sort du périmètre de ce calibrage — elle a été
+  livrée depuis : voir `[rag.libelles_types]` de `enseignes/kiabi/enseigne.toml`.
 
 ## Mesures
 

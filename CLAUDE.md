@@ -108,7 +108,9 @@ défaut (développement, tests, `scripts/mcp_client.py`) ou `http` (streamable, 
 `SORABEL_DEPOT` : `firestore` choisit `gouvernance/identites_firestore.py` (production),
 toute autre valeur (ou absence) reste sur `gouvernance/identites.py` (SQLite). Front :
 `SORABEL_URL_MCP`, où joindre le serveur MCP déployé de Sorabel (`front/passerelle.py`) ;
-`SORABEL_URL_MCP_<ENSEIGNE>` (`SORABEL_URL_MCP_KIABI`…), celui d'une autre enseigne — sans
+`SORABEL_URL_MCP_<ENSEIGNE>` (`SORABEL_URL_MCP_KIABI`…), celui d'une autre enseigne (son
+`enseigne.toml` doit aussi être dans l'image du front ; `SORABEL_URL_MCP_SORABEL`, si posée,
+surcharge l'URL de Sorabel) — sans
 elle, l'enseigne n'est pas servie en HTTP, jamais de repli sur l'URL Sorabel.
 `SORABEL_FRONT_LOCAL=1` (`make front`) : mode local, sans IAP, sujet `local:developpeur`,
 toutes les enseignes servies, appels par un serveur MCP stdio par (profil, enseigne) ;
