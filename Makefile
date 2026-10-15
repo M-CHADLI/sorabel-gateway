@@ -160,7 +160,7 @@ front: .env ## Poste Streamlit local sans IAP, 127.0.0.1 seulement : construit d
 vitrine: ## Ouvre le poste de travail déployé (Cloud Run derrière IAP)
 	$(PY) -m webbrowser $(URL_FRONT)
 
-gcp-statut: ## État des services Cloud Run sorabel-mcp et sorabel-front
+gcp-statut: ## État des services Cloud Run (sorabel-mcp, sorabel-front, kiabi-mcp)
 	gcloud run services list --project=$(GCP_PROJET) --region=$(GCP_REGION)
 
 ##@ Nettoyage

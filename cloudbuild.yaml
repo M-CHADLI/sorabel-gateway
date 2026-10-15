@@ -1,16 +1,18 @@
 # Chaîne CI/CD Cloud Build : déclenchée sur push vers main.
 #
 # tests -> build (image unique, deux entrypoints) -> push Artifact Registry ->
-# déploiement des deux services Cloud Run (sorabel-mcp, sorabel-front).
+# déploiement des trois services Cloud Run (sorabel-mcp, sorabel-front, puis kiabi-mcp,
+# l'enseigne de démonstration servie par la même image).
 #
 # Les tests sont une barrière : Cloud Build exécute les étapes dans l'ordre et
 # s'arrête à la première en échec, donc un test rouge empêche tout déploiement.
 #
-# --async sur les deux déploiements : sans lui, `gcloud run deploy` attend que la nouvelle
+# --async sur les trois déploiements : sans lui, `gcloud run deploy` attend que la nouvelle
 # révision devienne saine avant de rendre la main. Or au tout premier passage (amorçage,
 # voir les substitutions _SORABEL_URL_PUBLIQUE / _SORABEL_IAP_AUDIENCE / _SORABEL_URL_MCP
 # ci-dessous), sorabel-mcp ne peut pas encore démarrer sain — sans --async, `deploy-mcp`
-# échouerait et empêcherait `deploy-front` de s'exécuter, cassant le bootstrap.
+# échouerait et empêcherait `deploy-front` de s'exécuter, cassant le bootstrap. kiabi-mcp a
+# le même amorçage, avec _KIABI_MCP_URL.
 steps:
   # `data/canonique/` est régénérable et gitignorée (voir .gitignore) : un checkout frais
   # ne l'a jamais eue. L'ingestion est une extraction déterministe sans appel réseau (aucune
@@ -30,6 +32,11 @@ steps:
   # Construit l'image à deux étapes du Dockerfile (tâche 9) : l'étape `index` y
   # exécute l'ingestion puis l'indexation, qui appellent Azure AI Foundry pour
   # les embeddings.
+  #
+  # Couplage : l'image est commune, donc l'index de Kiabi se construit ici aussi, après celui
+  # de Sorabel. Son échec (429 Azure, ingestion Kiabi cassée) fait échouer CETTE étape et, par
+  # elle, tous les déploiements — Sorabel compris. Inversement, un corpus Kiabi régénéré et
+  # commité sur main reconstruit l'image et redéploie Sorabel (docs/EXPLOITATION.md §10.1).
   #
   # Écart avec la version initiale de ce fichier : le Dockerfile déclare trois
   # ARG non secrets que l'étape `index` exige pour aboutir — AZURE_EMBEDDING_ENDPOINT,
@@ -96,10 +103,47 @@ steps:
       - --service-account=sorabel-front@$PROJECT_ID.iam.gserviceaccount.com
       - --command=streamlit
       - --args=run,front/app_client.py,--server.port=8080,--server.address=0.0.0.0
-      - --set-env-vars=SORABEL_DEPOT=firestore,SORABEL_JOURNAL=stdout,SORABEL_URL_MCP=$_SORABEL_URL_MCP
+      - --set-env-vars=SORABEL_DEPOT=firestore,SORABEL_JOURNAL=stdout,SORABEL_URL_MCP=$_SORABEL_URL_MCP,SORABEL_URL_MCP_KIABI=$_KIABI_MCP_URL
       - --session-affinity
       - --min-instances=0
       - --max-instances=2
+      - --async
+
+  # kiabi-mcp : l'enseigne de démonstration Kiabi (données FICTIVES), servie par la MÊME image
+  # que sorabel-mcp. Étape calquée sur deploy-mcp argument par argument
+  # (tests/test_cloudbuild.py le vérifie) ; seuls diffèrent le nom du service,
+  # SORABEL_ENSEIGNE=kiabi — qui fige l'enseigne du processus au démarrage
+  # (sorabel_enseigne.enseigne_active) : ce serveur ne sert que Kiabi, bien que l'image porte
+  # aussi les données de Sorabel — et SORABEL_URL_PUBLIQUE, l'URL de ce service-ci.
+  #
+  # Même compte de service que sorabel-mcp : il a déjà exactement les droits requis (clé Azure
+  # de génération, lecture Firestore, écriture de journal), et un compte distinct n'isolerait
+  # rien tant que les données des deux enseignes voyagent dans la même image
+  # (docs/EXPLOITATION.md §10.2).
+  #
+  # Dernière étape, après celles de Sorabel : une erreur propre à CE déploiement (droit
+  # manquant, quota Cloud Run) fait échouer le build sans avoir empêché sorabel-mcp ni
+  # sorabel-front de se déployer. Cela ne vaut que pour le déploiement : l'index Kiabi est
+  # construit dans l'étape `build` (voir plus haut), et son échec empêche tout déploiement.
+  - id: deploy-kiabi-mcp
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - kiabi-mcp
+      - --image=$_IMAGE:$SHORT_SHA
+      - --region=$_REGION
+      # Même raison que pour sorabel-mcp : c'est VerificateurJeton, pas l'IAM de Cloud Run, qui
+      # authentifie chaque appel — ici la même assertion IAP, relayée par le même front.
+      - --allow-unauthenticated
+      - --service-account=sorabel-mcp@$PROJECT_ID.iam.gserviceaccount.com
+      - --command=python
+      - --args=-m,mcp_server.serveur
+      - --set-env-vars=SORABEL_ENSEIGNE=kiabi,SORABEL_TRANSPORT=http,SORABEL_JOURNAL=stdout,SORABEL_DEPOT=firestore,SORABEL_OIDC_ISSUER=$_SORABEL_OIDC_ISSUER,SORABEL_OIDC_AUDIENCE=$_SORABEL_OIDC_AUDIENCE,SORABEL_URL_PUBLIQUE=$_KIABI_MCP_URL,SORABEL_IAP_AUDIENCE=$_SORABEL_IAP_AUDIENCE,SORABEL_OIDC_JWKS=$_SORABEL_OIDC_JWKS,AZURE_OPENAI_ENDPOINT=$_AZURE_OPENAI_ENDPOINT,AZURE_OPENAI_DEPLOYMENT=$_AZURE_OPENAI_DEPLOYMENT
+      - --set-secrets=AZURE_OPENAI_API_KEY=azure-openai-key:latest
+      - --min-instances=0
+      - --max-instances=4
       - --async
 
 availableSecrets:
@@ -143,6 +187,23 @@ availableSecrets:
 # puis renseigner cette substitution dans la configuration du déclencheur — sans
 # quoi `deploy-front` démarre sans erreur mais chaque appel de tool échoue
 # silencieusement dès la première interaction utilisateur.
+#
+# _KIABI_MCP_URL : l'URL MCP de kiabi-mcp, au format de _SORABEL_URL_MCP, c'est-à-dire
+# suffixée /mcp (<URL Cloud Run de kiabi-mcp>/mcp). Une seule valeur pour deux usages : le
+# front la reçoit telle quelle dans SORABEL_URL_MCP_KIABI pour joindre ce serveur, et
+# kiabi-mcp la publie comme identifiant de ressource protégée (SORABEL_URL_PUBLIQUE) — c'est
+# bien l'URL que ses clients appellent ; le SDK MCP en déduit lui-même le chemin RFC 9728 de
+# ses métadonnées (/.well-known/oauth-protected-resource/mcp). Aucun suffixe n'est ajouté
+# dans ce fichier, à dessein : vide, la substitution donne au front une variable vide, et il
+# ne propose pas Kiabi ; un `$_KIABI_MCP_URL/mcp` lui donnerait au contraire l'URL fantôme
+# « /mcp », et une carte Kiabi cassée sur le front de production. Même amorçage que
+# _SORABEL_URL_MCP, pour la même raison (l'URL Cloud Run n'existe qu'après le premier
+# déploiement de kiabi-mcp) : un premier build avec la valeur vide crée kiabi-mcp, dont la
+# révision ne démarre pas (SORABEL_URL_PUBLIQUE vide) — --async laisse le build aller au
+# bout, et le front continue de ne proposer que Sorabel ; relever ensuite l'URL
+# (gcloud run services describe kiabi-mcp --region=... --format='value(status.url)'),
+# la renseigner suffixée /mcp dans le déclencheur, puis relancer un build
+# (docs/EXPLOITATION.md §10.3).
 substitutions:
   _REGION: europe-west1
   _IMAGE: europe-west1-docker.pkg.dev/${PROJECT_ID}/sorabel/gateway
@@ -156,6 +217,7 @@ substitutions:
   _SORABEL_OIDC_JWKS: ""
   _AZURE_OPENAI_DEPLOYMENT: ""
   _SORABEL_URL_MCP: ""
+  _KIABI_MCP_URL: ""
 
 options:
   logging: CLOUD_LOGGING_ONLY

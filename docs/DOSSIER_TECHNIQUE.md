@@ -9,10 +9,11 @@ alternatives écartées restent dans `docs/conception.md` ; le cahier des charge
 livrés, puis mis en état de production sur GCP (transport HTTP, authentification OAuth 2.1,
 identités Firestore, Docker, CI/CD — chantier `gcp-vitrine`, voir §14) — **453 tests** au
 vert. La vitrine a depuis été **provisionnée et vérifiée sur un projet GCP réel**
-(`sorabel-vitrine-2026`) : les deux services tournent, le parcours de démonstration complet
-fonctionne derrière IAP, et un client MCP tiers authentifié par OAuth Google obtient
-effectivement les 8 tools (`scripts/mcp_client_oauth.py`) — voir `docs/EXPLOITATION.md` pour
-le détail des correctifs qu'un déploiement réel a révélés. L'évaluation E6 n'est pas écrite
+(`sorabel-vitrine-2026`) : les deux services d'alors (`sorabel-mcp`, `sorabel-front`) tournent,
+le parcours de démonstration complet fonctionne derrière IAP, et un client MCP tiers
+authentifié par OAuth Google obtient effectivement les 8 tools
+(`scripts/mcp_client_oauth.py`) — voir `docs/EXPLOITATION.md` pour le détail des correctifs
+qu'un déploiement réel a révélés. L'évaluation E6 n'est pas écrite
 (§11).
 
 ---
@@ -709,12 +710,14 @@ GCP réel (IAP, inscription, Firestore), voir `docs/EXPLOITATION.md` §9.
 
 ## 14. Déploiement
 
-La mise en production sur GCP (deux services Cloud Run, image Docker à deux étapes, CI/CD
-Cloud Build, Firestore, OAuth 2.1) est **déployée et vérifiée** sur `sorabel-vitrine-2026`
-(europe-west1) : `docs/EXPLOITATION.md` documente le provisionnement pas à pas, les variables
-à renseigner, les coûts, et le parcours de démonstration tel qu'il a effectivement été
-déroulé — y compris les correctifs que ce premier déploiement réel a rendus nécessaires
-(§12). Ce fichier-ci ne la duplique pas ; il ne décrit que le code et ses contrats.
+La mise en production sur GCP (trois services Cloud Run — `sorabel-mcp`, `sorabel-front` et
+`kiabi-mcp`, l'enseigne de démonstration servie par la même image —, image Docker à deux
+étapes, CI/CD Cloud Build, Firestore, OAuth 2.1) est **déployée et vérifiée** sur
+`sorabel-vitrine-2026` (europe-west1) pour `sorabel-mcp` et `sorabel-front` ; `kiabi-mcp`
+s'y ajoute (`docs/EXPLOITATION.md` §10) et n'a pas fait partie de cette vérification.
+`docs/EXPLOITATION.md` documente le provisionnement pas à pas, les variables à renseigner, les
+coûts, et le parcours de démonstration tel qu'il a effectivement été déroulé — y compris les
+correctifs que ce premier déploiement réel a rendus nécessaires (§12). Ce fichier-ci ne la duplique pas ; il ne décrit que le code et ses contrats.
 
 L'image copie le paquet `sorabel_enseigne/` et le seul `enseignes/sorabel/enseigne.toml` —
 jamais le dossier `enseignes/` entier, pour que le corpus d'une autre enseigne n'y entre pas ;
